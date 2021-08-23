@@ -12,7 +12,6 @@ using GLMakie
 GLMakie.enable_SSAO[] = false
 using ColorSchemes
 
-
 using Luxor
 
 function read_doses()
@@ -153,22 +152,22 @@ function find_matching_seqs(sop_uid, dcm_rs, ROIname)
         #println(ssr)
         ROIs = [rcs for rcs in dcm_rs.ROIContourSequence if rcs.ReferencedROINumber == ssr.ROINumber]
         ROI = ROIs[1]
-        try
+        if ROI.ContourSequence !== nothing
             for seq in ROI.ContourSequence
                 alleq = true
-                for cis in seq.ContourImageSequence
-                    #println(cis.ReferencedSOPInstanceUID)
-                    if cis.ReferencedSOPInstanceUID != sop_uid
-                        alleq = false
-                        break
+                if seq.ContourImageSequence !== nothing
+                    for cis in seq.ContourImageSequence
+                        #println(cis.ReferencedSOPInstanceUID)
+                        if cis.ReferencedSOPInstanceUID != sop_uid
+                            alleq = false
+                            break
+                        end
                     end
                 end
                 if alleq
                     push!(seqs, seq)
                 end
             end
-        catch e
-            println(e)
         end
     end
 
@@ -201,8 +200,8 @@ function extract_roi_masks(dcm_ct, dcm_rs)
                     Luxor.poly(luxvert, :fill)
                 end 512 512
             end
-            rgbbuff = Images.RGB.(buffer)
-            mask[:, :, i] .= Gray.(rgbbuff) .> 0.5
+            graybuff = Gray.(Images.RGB{Float64}.(buffer))
+            mask[:, :, i] .= graybuff .> 0.5
         end
         roi_to_mask[string(name)] = mask
     end
@@ -312,7 +311,30 @@ end
 # CT: CT scan
 # RTSTRUCT: structures in the CT scan
 
-function load_things_nbia(CT_fname, dose_sum_fname, rs_fname, rois_highlighted)
+"""
+    DoseData
+
+Loaded DICOM files for one RT patient, including CT, planned doses, ROI masks and delivered
+doses.
+
+TODO: remove rois_highlighted (only used for testing).
+"""
+struct DoseData{TCT,TPD,TRM,TDD,TRH}
+    ct_files::TCT
+    doses::TPD
+    roi_masks::TRM
+    primo_filtered_in_Gy::TDD
+    rois_highlighted::TRH
+end
+
+"""
+    load_DICOMs(CT_fname, dose_sum_fname, rs_fname, rois_highlighted)
+
+Load given DICOM files.
+
+TODO: support multiple dose files.
+"""
+function load_DICOMs(CT_fname, dose_sum_fname, rs_fname, rois_highlighted)
     dcm_data = dcm_parse(dose_sum_fname)
     ct_files = load_dicom(CT_fname)
     doses = transform_doses(dcm_data, ct_files)
@@ -329,18 +351,28 @@ function load_things_nbia(CT_fname, dose_sum_fname, rs_fname, rois_highlighted)
     return DoseData(ct_files, doses, roi_masks, primo_filtered_in_Gy, rois_highlighted)
 end
 
+"""
+    HNSCC_BASE_PATH
 
+Base path to HNSCC data files. They can be downloaded using the provided manifest file.
+"""
 const HNSCC_BASE_PATH = "test-data/HNSCC/HNSCC/"
 
-hnscc_7 = load_things_nbia(
+### loading a sample file from the NBIA dataset
+hnscc_7 = load_DICOMs(
     HNSCC_BASE_PATH * "HNSCC-01-0007/04-29-1997-RT SIMULATION-32176/10.000000-72029/",
     HNSCC_BASE_PATH * "HNSCC-01-0007/04-29-1997-RT SIMULATION-32176/1.000000-09274/1-1.dcm",
     HNSCC_BASE_PATH * "HNSCC-01-0007/04-29-1997-RT SIMULATION-32176/1.000000-06686/1-1.dcm",
     [("PTV 1 70", RGBA{Float32}(0.0f0, 1.0f0, 0.0f0, 0.4f0)),],
 )
 
-function test_d()
-    selected_data = static_data
+"""
+    test_scene()
+
+Display the `hnscc_7` scene using Makie.jl (for testing purposes).
+"""
+function test_scene()
+    selected_data = hnscc_7
     highlight = [("PTV", RGBA{Float32}(0.0f0, 1.0f0, 0.0f0, 0.1f0))]
     scene = make_mesh(
         selected_data.doses,
