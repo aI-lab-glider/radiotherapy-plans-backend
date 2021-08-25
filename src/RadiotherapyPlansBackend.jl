@@ -11,13 +11,9 @@ using StaticArrays
 using GLMakie
 GLMakie.enable_SSAO[] = false
 using ColorSchemes
+using Statistics
 
 using Luxor
-
-function read_doses()
-    dcm_data = dcm_parse("STATIC_1/Dose/suma.dcm")
-    return dcm_data.PixelData * dcm_data.DoseGridScaling
-end
 
 
 function get_transform_matrix(dcm)
@@ -77,13 +73,6 @@ function extract_pixeldata(dcm_array)
     end
 end
 
-function read_ct(path)
-    dcms = load_dicom(path)
-    return dcms[1].pixeldata
-end
-
-#dcm_ct = load_dicom("./STATIC_1/CT/")[1].dcms[1]
-
 function combine_ct_doses(ct_px, doses, masks, primo_doses)
     # Prepare the data
     out = RGB.(ct_px ./ maximum(ct_px))
@@ -93,46 +82,6 @@ function combine_ct_doses(ct_px, doses, masks, primo_doses)
     end
     return out
 end
-
-function draw_with_isodose(ct_px, doses, masks, primo_doses, level; ctf = nothing)
-    out = RGB.(ct_px ./ maximum(ct_px))
-    md = maximum(doses)
-
-    mask_expected = (doses .>= level) .& masks
-    mask_measured = (primo_doses .>= level) .& masks
-
-    for i in eachindex(out)
-        color = if mask_expected[i] && !(mask_measured[i])
-            RGB(0, 0, 1/3)
-        elseif !(mask_expected[i]) && mask_measured[i]
-            RGB(1/3, 0, 0)
-        elseif masks[i]
-            RGB(0, 1/3, 0)
-        else
-            RGB(0, 0.0, 0)
-        end
-        out[i] = out[i] + color
-    end
-
-    old_size = size(out)
-
-    if ctf !== nothing
-        z_scale = ctf.SliceThickness / ctf.PixelSpacing[1]
-        out = imresize(out, old_size[1], old_size[2], Int(ceil(old_size[3] * z_scale)))
-    end
-    
-    return map(clamp01nan, out)
-end
-
-function mean_dose_over_mask(mask, dose)
-    bm = convert(Array{Bool}, mask)
-    sum_pixels = sum(bm)
-    masked_dose = copy(dose)
-    masked_dose[.!(bm)] .= 0
-    sum_dose = sum(masked_dose)
-    return sum_dose/sum_pixels
-end
-
 
 function get_ROI_name(dcm, refnumber)
     for ssr in dcm.StructureSetROISequence
@@ -229,9 +178,38 @@ function get_slice_thickness(ct_files)
     # we assume that slices have equal distances -- needs to be verified later
     slth = ct_files[1].dcms[1].SliceThickness
     if length(slth) == 0
-        slth = ct_files[1].dcms[1].SliceLocation - ct_files[1].dcms[2].SliceLocation
+        locs = map(d -> d.SliceLocation, ct_files[1].dcms)
+        locdiffs = diff(locs)
+        extr_locdiffs = extrema(locdiffs)
+        if extr_locdiffs[1] ≉ extr_locdiffs[2]
+            @warn "slices are not equally spaced: $extr_locdiffs"
+        end
+        slth = abs(mean(locdiffs))
     end
     return slth
+end
+
+function ct_origin_widths(ct_files)
+    dcm_sample_ct = ct_files[1].dcms[1]
+    origin = SA[0.0, 0.0, 0.0]
+    widths = SA[
+        Float32(dcm_sample_ct.Rows*dcm_sample_ct.PixelSpacing[1]),
+        Float32(dcm_sample_ct.Columns*dcm_sample_ct.PixelSpacing[2]),
+        Float32(get_slice_thickness(ct_files)*length(ct_files[1].dcms)),
+    ]
+    return origin, widths
+end
+
+function make_CT_mesh(ct_files, isolevel::Float64=1200.0; body_mask=nothing)
+    algo_ct = NaiveSurfaceNets(iso=isolevel, insidepositive=true)
+    px_data = copy(ct_files[1].pixeldata)
+    origin, widths = ct_origin_widths(ct_files)
+    if body_mask !== nothing
+        min_ct = minimum(px_data)
+        px_data[(!).(body_mask)] .= min_ct
+    end
+    ct_mesh = make_normals(px_data, algo_ct, origin, widths)
+    return ct_mesh
 end
 
 function make_mesh(doses, ct_files, roi_masks, rois_to_plot = [];
@@ -252,13 +230,6 @@ function make_mesh(doses, ct_files, roi_masks, rois_to_plot = [];
 )
     #Makie.scatter([0.0, 1.0], [0.0, 1.0], [0.0, 1.0])
     scene = Makie.Scene()
-    dcm_sample_ct = ct_files[1].dcms[1]
-    origin = SA[0.0, 0.0, 0.0]
-    widths = SA[
-        Float32(dcm_sample_ct.Rows*dcm_sample_ct.PixelSpacing[1]),
-        Float32(dcm_sample_ct.Columns*dcm_sample_ct.PixelSpacing[2]),
-        Float32(get_slice_thickness(ct_files)*length(ct_files[1].dcms)),
-    ]
 
     body_mask = haskey(roi_masks, "BODY") ? roi_masks["BODY"] : one.(first(roi_masks)[2])
 
@@ -278,13 +249,7 @@ function make_mesh(doses, ct_files, roi_masks, rois_to_plot = [];
     end
     # show something from CT
     begin
-        algo_ct = NaiveSurfaceNets(iso=1200.0, insidepositive=true)
-        px_data = copy(ct_files[1].pixeldata)
-        if trim_ct_to_body
-            min_ct = minimum(px_data)
-            px_data[(!).(body_mask)] .= min_ct
-        end
-        ct_mesh = make_normals(px_data, algo_ct, origin, widths)
+        ct_mesh = make_CT_mesh(ct_files; body_mask = trim_ct_to_body ? body_mask : nothing)
         Makie.mesh!(
             scene,
             ct_mesh,
@@ -316,25 +281,22 @@ end
 
 Loaded DICOM files for one RT patient, including CT, planned doses, ROI masks and delivered
 doses.
-
-TODO: remove rois_highlighted (only used for testing).
 """
-struct DoseData{TCT,TPD,TRM,TDD,TRH}
+struct DoseData{TCT,TPD,TRM,TDD}
     ct_files::TCT
     doses::TPD
     roi_masks::TRM
     primo_filtered_in_Gy::TDD
-    rois_highlighted::TRH
 end
 
 """
-    load_DICOMs(CT_fname, dose_sum_fname, rs_fname, rois_highlighted)
+    load_DICOMs(CT_fname, dose_sum_fname, rs_fname)
 
 Load given DICOM files.
 
 TODO: support multiple dose files.
 """
-function load_DICOMs(CT_fname, dose_sum_fname, rs_fname, rois_highlighted)
+function load_DICOMs(CT_fname, dose_sum_fname, rs_fname)
     dcm_data = dcm_parse(dose_sum_fname)
     ct_files = load_dicom(CT_fname)
     doses = transform_doses(dcm_data, ct_files)
@@ -348,7 +310,7 @@ function load_DICOMs(CT_fname, dose_sum_fname, rs_fname, rois_highlighted)
     filtering_steps = (ct_files[1].dcms[1].PixelSpacing..., slth)
     primo_filtered_in_Gy = imfilter(primo_in_Gy, Kernel.gaussian(0.8 ./ filtering_steps))
 
-    return DoseData(ct_files, doses, roi_masks, primo_filtered_in_Gy, rois_highlighted)
+    return DoseData(ct_files, doses, roi_masks, primo_filtered_in_Gy)
 end
 
 """
@@ -363,8 +325,12 @@ hnscc_7 = load_DICOMs(
     HNSCC_BASE_PATH * "HNSCC-01-0007/04-29-1997-RT SIMULATION-32176/10.000000-72029/",
     HNSCC_BASE_PATH * "HNSCC-01-0007/04-29-1997-RT SIMULATION-32176/1.000000-09274/1-1.dcm",
     HNSCC_BASE_PATH * "HNSCC-01-0007/04-29-1997-RT SIMULATION-32176/1.000000-06686/1-1.dcm",
-    [("PTV 1 70", RGBA{Float32}(0.0f0, 1.0f0, 0.0f0, 0.4f0)),],
 )
+
+function ct_mesh_from_files(ct_fname)
+    ct_files = load_dicom(ct_fname)
+    return make_CT_mesh(ct_files)
+end
 
 """
     test_scene()
