@@ -1,3 +1,8 @@
+name = "RadiotherapyPlansBackend"
+uuid = "047fa587-d6db-4819-bdd4-fd415c2a480b"
+authors = ["Treborsky <rob.koziarski2k@gmail.com>"]
+version = "0.1.0"
+
 [deps]
 ColorSchemes = "35d6a980-a343-548e-a6ea-1d62b119f2f4"
 DICOM = "a26e6606-dd52-5f6a-a97f-4f611373d757"
