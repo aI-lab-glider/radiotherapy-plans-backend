@@ -1,8 +1,9 @@
+module RadiotherapyPlansBackend
+
 using Images, ImageView, DICOM
 using Plots
 using Interpolations
 using ImageFiltering
-
 using Makie
 using LinearAlgebra
 using Meshing
@@ -10,12 +11,12 @@ using MeshIO
 using GeometryBasics
 using StaticArrays
 using GLMakie
+
 GLMakie.enable_SSAO[] = false
+
 using ColorSchemes
 using Statistics
-
 using Luxor
-
 
 function get_transform_matrix(dcm)
     M = zeros(3,3)
@@ -329,12 +330,6 @@ Base path to HNSCC data files. They can be downloaded using the provided manifes
 """
 const HNSCC_BASE_PATH = "test-data/HNSCC/HNSCC/"
 
-### loading a sample file from the NBIA dataset
-hnscc_7 = load_DICOMs(
-    HNSCC_BASE_PATH * "HNSCC-01-0007/04-29-1997-RT SIMULATION-32176/10.000000-72029/",
-    HNSCC_BASE_PATH * "HNSCC-01-0007/04-29-1997-RT SIMULATION-32176/1.000000-09274/1-1.dcm",
-    HNSCC_BASE_PATH * "HNSCC-01-0007/04-29-1997-RT SIMULATION-32176/1.000000-06686/1-1.dcm",
-)
 
 """
     ct_mesh_from_files(dd::DoseData, ct_mesh_fname; kwargs...)
@@ -394,4 +389,6 @@ function test_scene()
         trim_doses_to_rois = true,
         hot_cold_level=63.0,
     )
+end
+
 end
