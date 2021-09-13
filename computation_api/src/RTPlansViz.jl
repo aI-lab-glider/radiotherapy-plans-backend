@@ -1,4 +1,4 @@
-module RadiotherapyPlansBackend
+module GenieApp
 
 using Images, ImageView, DICOM
 using Plots
@@ -288,7 +288,6 @@ end
 
 """
     DoseData
-
 Loaded DICOM files for one RT patient, including CT, planned doses, ROI masks and delivered
 doses.
 """
@@ -301,9 +300,7 @@ end
 
 """
     load_DICOMs(CT_fname, dose_sum_fname, rs_fname)
-
 Load given DICOM files.
-
 TODO: support multiple dose files.
 """
 function load_DICOMs(CT_fname, dose_sum_fname, rs_fname)
@@ -325,11 +322,9 @@ end
 
 """
     HNSCC_BASE_PATH
-
 Base path to HNSCC data files. They can be downloaded using the provided manifest file.
 """
-const HNSCC_BASE_PATH = "test-data/HNSCC/HNSCC/"
-
+const base_to_manifest = "../"
 
 """
     ct_mesh_from_files(dd::DoseData, ct_mesh_fname; kwargs...)
@@ -367,7 +362,6 @@ end
 
 """
     test_scene()
-
 Display the `hnscc_7` scene using Makie.jl (for testing purposes).
 """
 function test_scene()
@@ -391,4 +385,24 @@ function test_scene()
     )
 end
 
+## REST API
+using Genie, Genie.Router
+using Genie.Renderer, Genie.Renderer.Json
+using HTTP
+
+Genie.config.run_as_server = true
+
+const DICOM_root = "./static/uploads/"
+
+route("/load", method = GET) do
+	message = jsonpayload()
+	load_DICOMs(
+		    DICOM_root + message["CT_fname"],
+		    DICOM_root + message["DoseSum_fname"],
+		    DICOM_root + message["RS_fname"]
+		)
 end
+
+Genie.startup(8001, "127.0.0.1", async = false)
+
+end # module

@@ -1,0 +1,4 @@
+name = "RTPlansViz"
+uuid = "b4a558f9-ded2-4965-ab58-877dd48e747b"
+authors = ["trebor <rob.koziarski2k@gmail.com>"]
+version = "0.1.0"
