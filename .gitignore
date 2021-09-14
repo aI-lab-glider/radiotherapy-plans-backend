@@ -57,6 +57,9 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# Uploaded files - they are used only during runtime, so they're not relevant to development
+static/uploads
+
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
