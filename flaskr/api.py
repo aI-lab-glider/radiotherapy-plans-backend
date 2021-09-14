@@ -4,6 +4,8 @@ import werkzeug
 import requests
 import zipfile
 
+import dicomutils
+
 UPLOAD_DIR = '../static/uploads'
 DICOM_PATH_RELATIVE = UPLOAD_DIR + '/dicoms'
 DICOM_PATH_ABSOLUTE = '~/ProjectSummer/radiotherapy-plans-backend/static/uploads/dicoms'
@@ -11,9 +13,10 @@ GENIE_API = 'http://127.0.0.1:8001/'
 
 class HelloWorld(Resource):
     def get(self):
-        return {'hello': 'world'}
+        return { 'hello': 'world' }
 
 class FileUploads(Resource):
+
     def __init__(self):
         self.parser = reqparse.RequestParser()
 
@@ -38,12 +41,51 @@ class FileUploads(Resource):
         archive.save(os.path.join(UPLOAD_DIR, archive.filename))
 
         # unzip the archive
-        with zipfile.ZipFile(os.path.join(UPLOAD_DIR, archive.filename), 'r') as zip_ref:
-            zip_ref.extractall(os.path.join(UPLOAD_DIR, 'dicoms'))
-        
+        with zipfile.ZipFile(os.path.join(UPLOAD_DIR, archive.filename), 'r') as zip_ref, err:
+            if err == zipfile.BadZipFile:
+                handle_bad_zip_file(err)
+            elif err == zipfile.LargeZipFile:
+                handle_large_zip_file(err)
+            else:
+               zip_ref.extractall(os.path.join(UPLOAD_DIR, 'dicoms'))
+
+        # verify that the archive contains dicom files   
+        try:
+            check_archive_contents(path_to_archive)
+        except dicomutils.InvalidDicomName as err:
+            handle_invalid_contents(err)
+
         return { 
+                'status': 'success',
                 'message': 'files saved to path',
                 'pathRelative': DICOM_PATH_RELATIVE,
                 'pathAbsolute': DICOM_PATH_ABSOLUTE,
+                }
+
+
+def check_archive_contents(path):
+    # TODO: implement recursively going into all directories on $path
+    # and checking all files in them for regex: ^[[:alnum:]\/\- \.\\]*\.dcm$
+    raise NotImplementedError('check_archive_contents()')
+
+def handle_bad_zip_file(ex: zipfile.BadZipFile):
+    return {
+            'status': 'exception',
+            'message': 'bad zip file provided',
+            'exceptionMessage': str(ex),
+            }
+
+def handle_large_zip_file(ex: zipfile.LargeZipFile):
+    return {
+            'status': 'exception',
+            'message': 'excedingly large zip file provided',
+            'exceptionMessage': str(ex),
+            }
+
+def handle_invalid_contents(ex: dicomutils.InvalidDicomName):
+    return {
+            'status': 'exception',
+            'message': 'invalid name found inside the archive: {}'.format(ex.filename),
+            'exceptionMessage': ex.message,
             }
 
