@@ -1,8 +1,9 @@
-from flask_restful import Resource, reqparse
+"""API for the backend"""
+
 import os
-import werkzeug
-import requests
 import zipfile
+from flask_restful import Resource, reqparse
+import werkzeug
 
 import dicomutils
 
@@ -11,10 +12,6 @@ DICOM_PATH_RELATIVE = UPLOAD_DIR + '/dicoms'
 DICOM_PATH_ABSOLUTE = '~/ProjectSummer/radiotherapy-plans-backend/static/uploads/dicoms'
 GENIE_API = 'http://127.0.0.1:8001/'
 
-class HelloWorld(Resource):
-    def get(self):
-        return { 'hello': 'world' }
-
 class FileUploads(Resource):
 
     def __init__(self):
@@ -22,7 +19,7 @@ class FileUploads(Resource):
 
     def get(self):
         # get all files in the ./static/uploads directory
-        files = [f for f in os.listdir(UPLOAD_DIR + '/dicoms')]
+        files = list(os.listdir(UPLOAD_DIR + '/dicoms'))
         return {
                 'pathRelative': DICOM_PATH_RELATIVE,
                 'pathAbsolute': DICOM_PATH_ABSOLUTE,
@@ -38,24 +35,25 @@ class FileUploads(Resource):
 
         # save the .zip archive
         archive = args.get('dicomArchive')
-        archive.save(os.path.join(UPLOAD_DIR, archive.filename))
+        path_to_archive = os.path.join(UPLOAD_DIR, archive.filename)
+        archive.save(path_to_archive)
 
         # unzip the archive
-        with zipfile.ZipFile(os.path.join(UPLOAD_DIR, archive.filename), 'r') as zip_ref, err:
+        with zipfile.ZipFile(path_to_archive, 'r') as (zip_ref, err):
             if err == zipfile.BadZipFile:
                 handle_bad_zip_file(err)
             elif err == zipfile.LargeZipFile:
                 handle_large_zip_file(err)
             else:
-               zip_ref.extractall(os.path.join(UPLOAD_DIR, 'dicoms'))
+                zip_ref.extractall(os.path.join(UPLOAD_DIR, 'dicoms'))
 
-        # verify that the archive contains dicom files   
+        # verify that the archive contains dicom files
         try:
             check_archive_contents(path_to_archive)
         except dicomutils.InvalidDicomName as err:
             handle_invalid_contents(err)
 
-        return { 
+        return {
                 'status': 'success',
                 'message': 'files saved to path',
                 'pathRelative': DICOM_PATH_RELATIVE,
@@ -88,4 +86,3 @@ def handle_invalid_contents(ex: dicomutils.InvalidDicomName):
             'message': 'invalid name found inside the archive: {}'.format(ex.filename),
             'exceptionMessage': ex.message,
             }
-
