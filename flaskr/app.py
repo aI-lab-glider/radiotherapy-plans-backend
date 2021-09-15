@@ -2,9 +2,7 @@
 
 from flask import Flask
 from flask_restful import Api
-
-from . import api as api_module
-from api_module import FileUploads
+from api import FileUploads
 
 # Flask application initialization
 app = Flask(__name__)
