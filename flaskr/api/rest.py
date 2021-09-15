@@ -4,7 +4,7 @@ import os
 import zipfile
 from flask_restful import Resource, reqparse
 import werkzeug
-import dicomutils
+from utils import dicomutils
 
 UPLOAD_DIR = '../static/uploads'
 DICOM_PATH_RELATIVE = UPLOAD_DIR + '/dicoms'
@@ -38,13 +38,9 @@ class FileUploads(Resource):
         archive.save(path_to_archive)
 
         # unzip the archive
-        with zipfile.ZipFile(path_to_archive, 'r') as (zip_ref, err):
-            if err == zipfile.BadZipFile:
-                handle_bad_zip_file(err)
-            elif err == zipfile.LargeZipFile:
-                handle_large_zip_file(err)
-            else:
-                zip_ref.extractall(os.path.join(UPLOAD_DIR, 'dicoms'))
+        # TODO: implement try catch version & catch zipfile errors
+        with zipfile.ZipFile(path_to_archive, 'r') as zip_ref:
+            zip_ref.extractall(os.path.join(UPLOAD_DIR, 'dicoms'))
 
         # verify that the archive contains dicom files
         try:
@@ -65,6 +61,7 @@ def check_archive_contents(path):
     # and checking all files in them for regex: ^[[:alnum:]\/\- \.\\]*\.dcm$
     raise NotImplementedError('check_archive_contents()')
 
+
 def handle_bad_zip_file(ex: zipfile.BadZipFile):
     return {
             'status': 'exception',
@@ -72,12 +69,14 @@ def handle_bad_zip_file(ex: zipfile.BadZipFile):
             'exceptionMessage': str(ex),
             }
 
+
 def handle_large_zip_file(ex: zipfile.LargeZipFile):
     return {
             'status': 'exception',
             'message': 'excedingly large zip file provided',
             'exceptionMessage': str(ex),
             }
+
 
 def handle_invalid_contents(ex: dicomutils.InvalidDicomName):
     return {

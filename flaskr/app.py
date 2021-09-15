@@ -2,16 +2,18 @@
 
 from flask import Flask
 from flask_restful import Api
-from api import FileUploads
+import api
+
+print(api)
 
 # Flask application initialization
 app = Flask(__name__)
 
 # REST API initialization
-api = Api(app)
+rest_api = Api(app)
 HOSTED_API_ROOT = "/api/"
 
-api.add_resource(FileUploads, HOSTED_API_ROOT + 'upload')
+rest_api.add_resource(api.rest.FileUploads, HOSTED_API_ROOT + 'upload')
 
 @app.route("/")
 def hello_world():
