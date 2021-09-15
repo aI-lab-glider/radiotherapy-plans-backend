@@ -1,7 +1,7 @@
-#!/usr/bin/env python
+"""Utilities for working with DICOM files"""
 
 class InvalidDicomName(Exception):
-    """Exception raised when a file name doesn't indicate 
+    """Exception raised when a file name doesn't indicate
     that it's a dicom file.
 
     Arttibutes:
@@ -10,6 +10,6 @@ class InvalidDicomName(Exception):
     """
 
     def __init__(self, filename: str, message: str):
+        super().__init__(message)
         self.filename = filename
         self.message = message
-
