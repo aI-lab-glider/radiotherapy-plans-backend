@@ -1,26 +1,13 @@
 name: Pylint
-
 on: [push]
-
 jobs:
-  build:
-
+  linting:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Copy the code
-    - uses: actions/checkout@v2
-    - name: Set up Python 3.9
-      uses: actions/setup-python@v1
-      with:
-        python-version: 3.9
-    - name: Create a virutal environment
-      run: python -m venv venv
-    - name: Activate the environment
-      run: source venv/bin/activate
-    - name: Install pip
-      run: python -m pip install --upgrade pip
-    - name: Install dependencies
-      run: pip install -r requirements.txt
-    - name: Analysing the code with pylint
-      run: pylint **/*.py
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v1
+        with:
+          python-version: 3.9
+      - run: python -m pip install -r requirements.txt
+      - run: pylint **/*.py
+    
