@@ -4,8 +4,7 @@ import os
 import zipfile
 from flask_restful import Resource, reqparse
 import werkzeug
-
-from . import dicomutils
+import dicomutils
 
 UPLOAD_DIR = '../static/uploads'
 DICOM_PATH_RELATIVE = UPLOAD_DIR + '/dicoms'
