@@ -22,7 +22,6 @@ class FileUploads(Resource):
         if not self.files:
             self.files = list(os.listdir(DICOM_PATH_ABSOLUTE))
         return {
-                'pathRelative': DICOM_PATH_RELATIVE,
                 'pathAbsolute': DICOM_PATH_ABSOLUTE,
                 'count' : len(self.files),
                 'files' : self.files,
