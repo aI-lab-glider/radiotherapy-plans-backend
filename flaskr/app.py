@@ -1,24 +1,23 @@
+"""Backend main module"""
+
 from flask import Flask
 from flask_restful import Api
+import api
 
-from api import HelloWorld, FileUploads
+print(api)
 
 # Flask application initialization
 app = Flask(__name__)
 
 # REST API initialization
-api = Api(app)
-hosted_api_root = "/api/" 
+rest_api = Api(app)
+HOSTED_API_ROOT = "/api/"
 
-api.add_resource(HelloWorld, hosted_api_root + 'hello')
-api.add_resource(FileUploads, hosted_api_root + 'upload')
-
-computation_api_url_base = "http://127.0.0.1:8001"
+rest_api.add_resource(api.rest.FileUploads, HOSTED_API_ROOT + 'upload')
 
 @app.route("/")
 def hello_world():
-   return "<p>Hello World!</p>"
+    return "<p>Hello World!</p>"
 
 if __name__ == '__main__':
     app.run(debug=True)
-
