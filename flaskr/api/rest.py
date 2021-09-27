@@ -15,15 +15,17 @@ class FileUploads(Resource):
 
     def __init__(self):
         self.parser = reqparse.RequestParser()
+        self.files = []
 
     def get(self):
         # get all files in the ./static/uploads directory
-        files = list(os.listdir(UPLOAD_DIR + '/dicoms'))
+        if not self.files:
+            self.files = list(os.listdir(DICOM_PATH_ABSOLUTE))
         return {
                 'pathRelative': DICOM_PATH_RELATIVE,
                 'pathAbsolute': DICOM_PATH_ABSOLUTE,
-                'count' : len(files),
-                'files' : files,
+                'count' : len(self.files),
+                'files' : self.files,
                 }
 
     def post(self):
