@@ -1,21 +1,23 @@
-module GenieApp
-
 using Images, ImageView, DICOM
 using Plots
 using Interpolations
 using ImageFiltering
+
 using Makie
 using LinearAlgebra
 using Meshing
+using MeshIO
 using GeometryBasics
 using StaticArrays
 using GLMakie
-
 GLMakie.enable_SSAO[] = false
-
 using ColorSchemes
 using Statistics
+
 using Luxor
+
+using Genie, Genie.Router, Genie.Renderer.Json, Genie.Requests
+using HTTP
 
 function get_transform_matrix(dcm)
     M = zeros(3,3)
@@ -158,11 +160,6 @@ function extract_roi_masks(dcm_ct, dcm_rs)
     return roi_to_mask
 end
 
-function sanitize_fname(fname)
-    return replace(fname, r"[%]|[/]" => "_")
-end
-
-
 function make_normals(doses, algo, origin, widths)
     mc = GeometryBasics.Mesh(doses, algo; origin = origin, widths = widths)
     itp = Interpolations.scale(interpolate(doses, BSpline(Quadratic(Periodic(OnGrid())))),
@@ -201,7 +198,17 @@ function ct_origin_widths(ct_files)
     return origin, widths
 end
 
-function make_CT_mesh(ct_files, isolevel::Float64=1200.0; body_mask=nothing)
+"""
+    make_CT_mesh(ct_files, isolevel::Float64=1200.0; body_mask=nothing)
+Make a mesh representing the given isolevel of a CT image given in `ct_files`. The argument
+`ct_files` can be taken from `DoseData`.
+# Arguments
+* `isolevel` should be specified in [Hounsfield scale](https://en.wikipedia.org/wiki/Hounsfield_scale).
+* `body_mask` can be `nothing` (and then it does nothing) or a 3D boolean array of the same
+    size as CT pixel array. If specified, the CT images is trimmed to `true` values in the
+    given array.
+"""
+function make_CT_mesh(ct_files; isolevel::Float64=1200.0, body_mask=nothing)
     algo_ct = NaiveSurfaceNets(iso=isolevel, insidepositive=true)
     px_data = copy(ct_files[1].pixeldata)
     origin, widths = ct_origin_widths(ct_files)
@@ -312,15 +319,33 @@ function load_DICOMs(CT_fname, dose_sum_fname, rs_fname)
 end
 
 """
-    HNSCC_BASE_PATH
-Base path to HNSCC data files. They can be downloaded using the provided manifest file.
+    ct_mesh_from_files(dd::DoseData, ct_mesh_fname; kwargs...)
+Make a CT mesh from the given `DoseData` object and save the result to file `ct_mesh_fname`.
+The extension part of `ct_mesh_fname` file must be one of the formats supported by MeshIO.
+`.obj` is preferred.
+Given `kwargs` are passed to `make_CT_mesh`.
+# Example
+`ct_mesh_from_files(dd, "/tmp/test.obj"; isolevel=1000.0)`
 """
-const base_to_manifest = "../"
-
-function ct_mesh_from_files(ct_fname)
-    ct_files = load_dicom(ct_fname)
-    return make_CT_mesh(ct_files)
+function ct_mesh_from_files(dd::DoseData, ct_mesh_fname; kwargs...)
+    ct_mesh = make_CT_mesh(dd.ct_files; kwargs...)
+    save(ct_mesh_fname, ct_mesh)
+    return ct_mesh_fname
 end
+
+"""
+    make_ROI_mesh(dd::DoseData, roi_name, roi_mesh_fname)
+Prepare mesh of ROI boundary for for the region of name `roi_name`. The mesh is saved in
+file `roi_mesh_fname`.
+"""
+function make_ROI_mesh(dd::DoseData, roi_name, roi_mesh_fname)
+    algo_roi = NaiveSurfaceNets(iso=0.5, insidepositive=true)
+    origin, widths = ct_origin_widths(dd.ct_files)
+    roi_mesh = make_normals(convert(Array{Float32}, dd.roi_masks[roi_name]), algo_roi, origin, widths)
+    save(roi_mesh_fname, roi_mesh)
+    return roi_mesh_fname
+end
+
 
 """
     test_scene()
@@ -347,24 +372,25 @@ function test_scene()
     )
 end
 
-## REST API
-using Genie, Genie.Router
-using Genie.Renderer, Genie.Renderer.Json
-using HTTP
+
+#	REST API allowing for executing different functions from the application's backend
+#	the method name corresponds to the function name, but is written in CamelCase, example:
+#	<hosting url>/MakeRoiMesh	->	calls the make_ROI_mesh method
 
 Genie.config.run_as_server = true
 
-const DICOM_root = "./static/uploads/"
-
-route("/load", method = GET) do
+route("/MakeCtMesh", method = POST) do
 	message = jsonpayload()
-	load_DICOMs(
-		    DICOM_root + message["CT_fname"],
-		    DICOM_root + message["DoseSum_fname"],
-		    DICOM_root + message["RS_fname"]
-		)
+	@show message
+	"Received message"
 end
 
-Genie.startup(8001, "127.0.0.1", async = false)
+route("/MakeRoiMesh", method = POST) do
+	message = jsonpayload()
+	@show jsonpayload()
 
-end # module
+	"Received message"
+end
+
+Genie.startup(8000, "127.0.0.1", async=false)
+
