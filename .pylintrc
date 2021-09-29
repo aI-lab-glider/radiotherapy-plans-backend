@@ -75,6 +75,8 @@ confidence=
 # no Warning level messages displayed, use "--disable=all --enable=classes
 # --disable=W".
 disable=print-statement,
+	W0703, # too general exception
+	C0303, # trailing whitespace
 	C0114,
 	C0115,
 	C0116,
