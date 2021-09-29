@@ -1,9 +1,8 @@
-module GenieApp
-
 using Images, ImageView, DICOM
 using Plots
 using Interpolations
 using ImageFiltering
+
 using Makie
 using LinearAlgebra
 using Meshing
@@ -11,12 +10,14 @@ using MeshIO
 using GeometryBasics
 using StaticArrays
 using GLMakie
-
 GLMakie.enable_SSAO[] = false
-
 using ColorSchemes
 using Statistics
+
 using Luxor
+
+using Genie, Genie.Router, Genie.Renderer.Json, Genie.Requests
+using HTTP
 
 function get_transform_matrix(dcm)
     M = zeros(3,3)
@@ -321,10 +322,19 @@ function load_DICOMs(CT_fname, dose_sum_fname, rs_fname)
 end
 
 """
-    HNSCC_BASE_PATH
-Base path to HNSCC data files. They can be downloaded using the provided manifest file.
+    ct_mesh_from_files(dd::DoseData, ct_mesh_fname; kwargs...)
+Make a CT mesh from the given `DoseData` object and save the result to file `ct_mesh_fname`.
+The extension part of `ct_mesh_fname` file must be one of the formats supported by MeshIO.
+`.obj` is preferred.
+Given `kwargs` are passed to `make_CT_mesh`.
+# Example
+`ct_mesh_from_files(dd, "/tmp/test.obj"; isolevel=1000.0)`
 """
-const base_to_manifest = "../"
+function ct_mesh_from_files(dd::DoseData, ct_mesh_fname; kwargs...)
+    ct_mesh = make_CT_mesh(dd.ct_files; kwargs...)
+    save(ct_mesh_fname, ct_mesh)
+    return ct_mesh_fname
+end
 
 """
     ct_mesh_from_files(dd::DoseData, ct_mesh_fname; kwargs...)
@@ -385,24 +395,25 @@ function test_scene()
     )
 end
 
-## REST API
-using Genie, Genie.Router
-using Genie.Renderer, Genie.Renderer.Json
-using HTTP
+
+#	REST API allowing for executing different functions from the application's backend
+#	the method name corresponds to the function name, but is written in CamelCase, example:
+#	<hosting url>/MakeRoiMesh	->	calls the make_ROI_mesh method
 
 Genie.config.run_as_server = true
 
-const DICOM_root = "./static/uploads/"
-
-route("/load", method = GET) do
+route("/MakeCtMesh", method = POST) do
 	message = jsonpayload()
-	load_DICOMs(
-		    DICOM_root + message["CT_fname"],
-		    DICOM_root + message["DoseSum_fname"],
-		    DICOM_root + message["RS_fname"]
-		)
+	@show message
+	"Received message"
 end
 
-Genie.startup(8001, "127.0.0.1", async = false)
+route("/MakeRoiMesh", method = POST) do
+	message = jsonpayload()
+	@show jsonpayload()
 
-end # module
+	"Received message"
+end
+
+Genie.startup(8000, "127.0.0.1", async=false)
+
