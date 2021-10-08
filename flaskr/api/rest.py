@@ -10,7 +10,7 @@ from utils import dicomutils
 
 UPLOAD_DIR = '/home/trebor/ProjectSummer/radiotherapy-plans-backend/static/uploads'
 DICOM_PATH_ABSOLUTE = '/home/trebor/ProjectSummer/radiotherapy-plans-backend/static/uploads/dicoms'
-GENIE_API = 'http://127.0.0.1:8001/'
+GENIE_API = 'http://127.0.0.1:8001/' # temporary
 
 class FileUploads(Resource):
 
@@ -88,7 +88,7 @@ class CalculateMesh(Resource):
             except Exception:
                 print('Endpoint error')
 
-        print(response)
+        print(response) # debug
 
 def check_archive_contents(path):
     # TODO: implement recursively going into all directories on $path
