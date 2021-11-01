@@ -3,6 +3,7 @@ using Plots
 using Interpolations
 using ImageFiltering
 
+
 using Makie
 using LinearAlgebra
 using Meshing
@@ -17,6 +18,7 @@ using Statistics
 using Luxor
 
 using Genie, Genie.Router, Genie.Renderer.Json, Genie.Requests
+
 using HTTP
 
 function get_transform_matrix(dcm)
@@ -396,6 +398,7 @@ function test_scene()
 end
 
 
+
 #	REST API allowing for executing different functions from the application's backend
 #	the method name corresponds to the function name, but is written in CamelCase, example:
 #	<hosting url>/MakeRoiMesh	->	calls the make_ROI_mesh method
@@ -416,4 +419,3 @@ route("/MakeRoiMesh", method = POST) do
 end
 
 Genie.startup(8000, "127.0.0.1", async=false)
-
