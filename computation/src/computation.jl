@@ -3,7 +3,6 @@ using Plots
 using Interpolations
 using ImageFiltering
 
-
 using Makie
 using LinearAlgebra
 using Meshing
@@ -17,9 +16,6 @@ using Statistics
 
 using Luxor
 
-using Genie, Genie.Router, Genie.Renderer.Json, Genie.Requests
-
-using HTTP
 
 function get_transform_matrix(dcm)
     M = zeros(3,3)
@@ -291,6 +287,7 @@ end
 
 """
     DoseData
+
 Loaded DICOM files for one RT patient, including CT, planned doses, ROI masks and delivered
 doses.
 """
@@ -303,7 +300,9 @@ end
 
 """
     load_DICOMs(CT_fname, dose_sum_fname, rs_fname)
+
 Load given DICOM files.
+
 TODO: support multiple dose files.
 """
 function load_DICOMs(CT_fname, dose_sum_fname, rs_fname)
@@ -324,12 +323,30 @@ function load_DICOMs(CT_fname, dose_sum_fname, rs_fname)
 end
 
 """
+    HNSCC_BASE_PATH
+
+Base path to HNSCC data files. They can be downloaded using the provided manifest file.
+"""
+const HNSCC_BASE_PATH = "test-data/HNSCC/HNSCC/"
+
+### loading a sample file from the NBIA dataset
+hnscc_7 = load_DICOMs(
+    HNSCC_BASE_PATH * "HNSCC-01-0007/04-29-1997-RT SIMULATION-32176/10.000000-72029/",
+    HNSCC_BASE_PATH * "HNSCC-01-0007/04-29-1997-RT SIMULATION-32176/1.000000-09274/1-1.dcm",
+    HNSCC_BASE_PATH * "HNSCC-01-0007/04-29-1997-RT SIMULATION-32176/1.000000-06686/1-1.dcm",
+)
+
+"""
     ct_mesh_from_files(dd::DoseData, ct_mesh_fname; kwargs...)
+
 Make a CT mesh from the given `DoseData` object and save the result to file `ct_mesh_fname`.
 The extension part of `ct_mesh_fname` file must be one of the formats supported by MeshIO.
 `.obj` is preferred.
+
 Given `kwargs` are passed to `make_CT_mesh`.
+
 # Example
+
 `ct_mesh_from_files(dd, "/tmp/test.obj"; isolevel=1000.0)`
 """
 function ct_mesh_from_files(dd::DoseData, ct_mesh_fname; kwargs...)
@@ -374,6 +391,7 @@ end
 
 """
     test_scene()
+
 Display the `hnscc_7` scene using Makie.jl (for testing purposes).
 """
 function test_scene()
@@ -396,26 +414,3 @@ function test_scene()
         hot_cold_level=63.0,
     )
 end
-
-
-
-#	REST API allowing for executing different functions from the application's backend
-#	the method name corresponds to the function name, but is written in CamelCase, example:
-#	<hosting url>/MakeRoiMesh	->	calls the make_ROI_mesh method
-
-Genie.config.run_as_server = true
-
-route("/MakeCtMesh", method = POST) do
-	message = jsonpayload()
-	@show message
-	"Received message"
-end
-
-route("/MakeRoiMesh", method = POST) do
-	message = jsonpayload()
-	@show jsonpayload()
-
-	"Received message"
-end
-
-Genie.startup(8000, "127.0.0.1", async=false)
