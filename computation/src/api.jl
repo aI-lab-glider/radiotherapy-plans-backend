@@ -1,21 +1,37 @@
+using Genie, Genie.Cache
 
-#	REST API allowing for executing different functions from the application's backend
-#	the method name corresponds to the function name, but is written in CamelCase, example:
-#	<hosting url>/MakeRoiMesh	->	calls the make_ROI_mesh method
+include("computation.jl")
+
 
 Genie.config.run_as_server = true
+Cache.init()
 
 route("/MakeCtMesh", method = POST) do
-	message = jsonpayload()
-	@show message
-	"Received message"
+	
+    CT_fname, dose_sum_fname, rs_fname = jsonpayload()["ct_fname"], jsonpayload()["dose_fname"], jsonpayload()["rs_fname"]
+    cache_key = CT_fname * dose_sum_fname * rs_fname
+    dicoms = withcache(cache_key) do
+        dose_data = load_DICOMs(CT_fname, dose_sum_fname, rs_fname)
+        mesh_location = create_mesh_and_save(dose_data, cache_key)
+    end
+    
+    return mesh_location
 end
 
 route("/MakeRoiMesh", method = POST) do
-	message = jsonpayload()
-	@show jsonpayload()
+    CT_fname, dose_sum_fname, rs_fname = jsonpayload()["ct_fname"], jsonpayload()["dose_fname"], jsonpayload()["rs_fname"]
+    roi_mesh = jsonpayload()["roi_mesh"]
 
-	"Received message"
+    cache_key = CT_fname * dose_sum_fname * rs_fname
+    dicoms = withcache(cache_key) do
+        dose_data = load_DICOMs(CT_fname, dose_sum_fname, rs_fname)
+    end
+    
+    mesh_location = withcache(cache_key * roi_mesh) do
+        make_ROI_mesh(dose_data, roi_name, cache_key)
+    end
+    
+    return mesh_location
 end
 
 Genie.startup(8000, "127.0.0.1", async=false)
