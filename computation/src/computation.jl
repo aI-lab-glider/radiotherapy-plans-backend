@@ -13,7 +13,6 @@ using GLMakie
 GLMakie.enable_SSAO[] = false
 using ColorSchemes
 using Statistics
-
 using Luxor
 
 
@@ -324,14 +323,14 @@ end
 
 Base path to HNSCC data files. They can be downloaded using the provided manifest file.
 """
-const HNSCC_BASE_PATH = "test-data/HNSCC/HNSCC/"
+# const HNSCC_BASE_PATH = "test-data/HNSCC/HNSCC/"
 
-### loading a sample file from the NBIA dataset
-hnscc_7 = load_DICOMs(
-    HNSCC_BASE_PATH * "HNSCC-01-0007/04-29-1997-RT SIMULATION-32176/10.000000-72029/",
-    HNSCC_BASE_PATH * "HNSCC-01-0007/04-29-1997-RT SIMULATION-32176/1.000000-09274/1-1.dcm",
-    HNSCC_BASE_PATH * "HNSCC-01-0007/04-29-1997-RT SIMULATION-32176/1.000000-06686/1-1.dcm",
-)
+# ### loading a sample file from the NBIA dataset
+# hnscc_7 = load_DICOMs(
+#     HNSCC_BASE_PATH * "HNSCC-01-0007/04-29-1997-RT SIMULATION-32176/10.000000-72029/",
+#     HNSCC_BASE_PATH * "HNSCC-01-0007/04-29-1997-RT SIMULATION-32176/1.000000-09274/1-1.dcm",
+#     HNSCC_BASE_PATH * "HNSCC-01-0007/04-29-1997-RT SIMULATION-32176/1.000000-06686/1-1.dcm",
+# )
 
 """
     ct_mesh_from_files(dd::DoseData, ct_mesh_fname; kwargs...)
