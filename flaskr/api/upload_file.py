@@ -56,6 +56,8 @@ class UploadFile(Resource):
 
     def _save_zip(self, zip_achive: werkzeug.datastructures.FileStorage) -> str:
         path_to_archive = os.path.join(UPLOAD_DIR, zip_achive.filename)
+        if not os.path.isdir(UPLOAD_DIR):
+            os.mkdir(UPLOAD_DIR)
         zip_achive.save(path_to_archive)
         return path_to_archive
 
@@ -68,5 +70,3 @@ class UploadFile(Resource):
         except dicomutils.InvalidDicomName:
             return False
         return True
-
-

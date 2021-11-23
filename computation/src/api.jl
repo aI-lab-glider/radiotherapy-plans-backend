@@ -12,8 +12,8 @@ Genie.config.run_as_server = true
 Cache.init()
 
 route("/MakeCtMesh", method = POST) do
-
-    CT_fname, dose_sum_fname, rs_fname = jsonpayload()["ct_fname"], jsonpayload()["dose_fname"], jsonpayload()["rs_fname"]
+    payload = jsonpayload()
+    CT_fname, dose_sum_fname, rs_fname = payload["ct_fname"], payload["dose_fname"], payload["rs_fname"]
     cache_key = CT_fname * dose_sum_fname * rs_fname
     dicoms = withcache(cache_key) do
         upload_dir = config["UPLOAD_DIR"]
@@ -25,8 +25,9 @@ route("/MakeCtMesh", method = POST) do
 end
 
 route("/MakeRoiMesh", method = POST) do
-    CT_fname, dose_sum_fname, rs_fname = jsonpayload()["ct_fname"], jsonpayload()["dose_fname"], jsonpayload()["rs_fname"]
-    roi_mesh = jsonpayload()["roi_mesh"]
+    payload = jsonpayload()
+    CT_fname, dose_sum_fname, rs_fname = payload["ct_fname"], payload["dose_fname"], payload["rs_fname"]
+    roi_mesh = payload["roi_mesh"]
 
     cache_key = CT_fname * dose_sum_fname * rs_fname
     dicoms = withcache(cache_key) do
