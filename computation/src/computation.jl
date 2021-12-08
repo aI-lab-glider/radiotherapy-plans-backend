@@ -352,25 +352,6 @@ function create_mesh_and_save(dd::DoseData, save_to; kwargs...)
 end
 
 """
-    ct_mesh_from_files(dd::DoseData, ct_mesh_fname; kwargs...)
-
-Make a CT mesh from the given `DoseData` object and save the result to file `ct_mesh_fname`.
-The extension part of `ct_mesh_fname` file must be one of the formats supported by MeshIO.
-`.obj` is preferred.
-
-Given `kwargs` are passed to `make_CT_mesh`.
-
-# Example
-
-`ct_mesh_from_files(dd, "/tmp/test.obj"; isolevel=1000.0)`
-"""
-function create_mesh_and_save(dd::DoseData, ct_mesh_fname; kwargs...)
-    ct_mesh = make_CT_mesh(dd.ct_files; kwargs...)
-    save(ct_mesh_fname, ct_mesh)
-    return ct_mesh_fname
-end
-
-"""
     make_ROI_mesh(dd::DoseData, roi_name, roi_mesh_fname)
 Prepare mesh of ROI boundary for for the region of name `roi_name`. The mesh is saved in
 file `roi_mesh_fname`.

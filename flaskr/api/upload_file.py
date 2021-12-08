@@ -1,13 +1,12 @@
 """API for the backend"""
 
 import os
+from pathlib import Path
 import zipfile
 from flask_restful import Resource, reqparse
 import werkzeug
-import requests
 from api.config import DICOMS_DIR, UPLOAD_DIR
-from api.helpers import check_archive_contents
-from utils import dicomutils
+from api.calculate_mesh import CalculateMesh, MeshParams
 from dataclasses import dataclass
 
 
@@ -30,43 +29,44 @@ class UploadFilesPostParams:
 class UploadFile(Resource):
 
     def __init__(self):
-        if not os.path.isdir(DICOMS_DIR):
-            os.makedirs(DICOMS_DIR) 
+        self._mesh_logic = CalculateMesh()
+        if not UPLOAD_DIR.exists():
+            UPLOAD_DIR.mkdir(parents=True)
+
 
     def get(self):
-        files = list(os.listdir(DICOMS_DIR))
+        files = list(DICOMS_DIR.iterdir())
         return {
-                'pathAbsolute': DICOMS_DIR,
+                'pathAbsolute': str(DICOMS_DIR),
                 'count' : len(files),
                 'files' : files,
                 }
 
     def post(self):
         body = UploadFilesPostParams.from_request()        
-
-        # save the .zip archive
-        path = self._save_zip(body.dicom_archive)
-        is_valid = self._validate_archive(path)
+        unpacked_dicoms_path = self._save_zip(body.dicom_archive)
+        mesh_params = MeshParams(
+                ct_fname=str(unpacked_dicoms_path/'ctFiles'),
+                dose_fname=str(unpacked_dicoms_path/'rtDoseFile'/'0.dcm'),
+                rs_fname=str(unpacked_dicoms_path/'rtStructFile'/'0.dcm'),
+                save_to=str(unpacked_dicoms_path/'result.obj')
+            )
         
+        response = self._mesh_logic._calculate_ct(mesh_params)
+        if response.status_code != 200:
+            return 422
+        computations_result = self._read_mesh(mesh_params.save_to)
         return {
-                'status': 'success' if is_valid else 'failure',
-                'message': 'files saved to path',
-                'pathAbsolute': DICOMS_DIR,
-            }
+            'mesh': computations_result
+        }
 
-    def _save_zip(self, zip_achive: werkzeug.datastructures.FileStorage) -> str:
-        path_to_archive = os.path.join(UPLOAD_DIR, zip_achive.filename)
-        if not os.path.isdir(UPLOAD_DIR):
-            os.mkdir(UPLOAD_DIR)
-        zip_achive.save(path_to_archive)
+    def _save_zip(self, zip_achive: werkzeug.datastructures.FileStorage) -> Path:
+        archive_fname = Path(zip_achive.filename).stem
+        path_to_archive = DICOMS_DIR/archive_fname
+        with zipfile.ZipFile(zip_achive, 'r') as zip_ref:
+            zip_ref.extractall(UPLOAD_DIR/path_to_archive)
         return path_to_archive
-
-    def _validate_archive(self, path):
-        tmp_unzip_location = 'dicoms'
-        with zipfile.ZipFile(path, 'r') as zip_ref:
-            zip_ref.extractall(os.path.join(UPLOAD_DIR, tmp_unzip_location))
-        try:
-            check_archive_contents(path)
-        except dicomutils.InvalidDicomName:
-            return False
-        return True
+    
+    def _read_mesh(self, mesh_file):
+        with open(mesh_file, 'r') as f:
+            return "".join(f.readlines())

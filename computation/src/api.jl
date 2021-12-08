@@ -1,4 +1,4 @@
-using Genie, Genie.Cache
+using Genie, Genie.Cache, Genie.Requests
 using DotEnv
 config = DotEnv.config()
 
@@ -13,15 +13,15 @@ Cache.init()
 
 route("/MakeCtMesh", method = POST) do
     payload = jsonpayload()
-    CT_fname, dose_sum_fname, rs_fname = payload["ct_fname"], payload["dose_fname"], payload["rs_fname"]
-    cache_key = CT_fname * dose_sum_fname * rs_fname
-    dicoms = withcache(cache_key) do
-        upload_dir = config["UPLOAD_DIR"]
-        dose_data = load_DICOMs(upload_dir * CT_fname, upload_dir * dose_sum_fname, upload_dir * rs_fname)
-        mesh_location = create_mesh_and_save(upload_dir * dose_data, upload_dir * cache_key)
+    CT_fname, dose_sum_fname, rs_fname, save_to = payload["ct_fname"], payload["dose_fname"], payload["rs_fname"], payload["save_to"]
+    upload_dir = config["UPLOAD_DIR"]
+    save_to = joinpath(upload_dir, save_to)
+    dicoms = withcache(save_to) do
+        CT_fname, dose_sum_fname, rs_fname = [joinpath(upload_dir, f_name) for f_name in [CT_fname, dose_sum_fname, rs_fname]]
+        dose_data = load_DICOMs(CT_fname, dose_sum_fname, rs_fname)
+        create_mesh_and_save(dose_data, save_to)
     end
-
-    return mesh_location
+    return save_to
 end
 
 route("/MakeRoiMesh", method = POST) do
