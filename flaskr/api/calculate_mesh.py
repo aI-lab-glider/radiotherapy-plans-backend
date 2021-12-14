@@ -7,7 +7,14 @@ import requests
 from flask_restful import Resource, reqparse
 from api.config import GENIE_API
 from api.helpers import get_ct_payload, get_roi_payload
+from dataclasses import dataclass, asdict
 
+@dataclass
+class MeshParams: 
+    ct_fname: str
+    dose_fname: str
+    rs_fname: str
+    save_to: str
 
 class MeshType(Enum):
     ROI = 'ROI'
@@ -52,13 +59,13 @@ class CalculateMesh(Resource):
             MeshType.CT: 'MakeCtMesh'
         }[mesh_type]
 
-    def _calculate_roi(self, mesh_params):
+    def _calculate_roi(self, mesh_params: MeshParams):
         payload = get_roi_payload(mesh_params)
-        return requests.post(GENIE_API + 'MakeRoiMesh', data=payload)
+        return requests.post(f'{GENIE_API}/MakeRoiMesh', json=asdict(payload))
 
-    def _calculate_ct(self, mesh_params):
+    def _calculate_ct(self, mesh_params: MeshParams):
         payload = get_ct_payload(mesh_params)
-        return requests.post(GENIE_API + 'MakeCtMesh', data=payload)
+        return requests.post(f'{GENIE_API}/MakeCtMesh', json=asdict(payload))
 
 
 
