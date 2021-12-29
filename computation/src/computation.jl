@@ -1,3 +1,23 @@
+# MIT License
+
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
 using Images, ImageView, DICOM
 using Plots
 using Interpolations
@@ -28,27 +48,93 @@ function get_transform_matrix(dcm)
     return inv(M)
 end
 
+
+"""
+    get_transform_matrix_ct(dcm)
+
+Get pixel to mm transformation matrix for CT image `dcm`.
+Based on https://dicom.innolitics.com/ciods/ct-image/image-plane/00200037
+"""
+function get_transform_matrix_ct(dcm)
+    Xxyz = dcm.ImageOrientationPatient[1:3]
+    Yxyz = dcm.ImageOrientationPatient[4:6]
+    Δi, Δj = dcm.PixelSpacing
+    S = dcm.ImagePositionPatient
+    M = SMatrix{4,4,Float64}([
+        Xxyz[1] * Δi Yxyz[1]*Δj 0 S[1];
+        Xxyz[2] * Δi Yxyz[2]*Δj 0 S[2];
+        Xxyz[3] * Δi Yxyz[3]*Δj 0 S[3];
+        0            0          0 1;
+    ])
+    
+    return M
+end
+
+"""
+    get_dose_grid(dcm)
+
+
+https://dicom.innolitics.com/ciods/rt-dose/rt-dose/3004000c
+"""
+function get_dose_grid(dcm)
+    Xxyz = dcm.ImageOrientationPatient[1:3]
+    Yxyz = dcm.ImageOrientationPatient[4:6]
+    Nx, Ny, Nz = size(dcm.PixelData)
+    Δi, Δj = dcm.PixelSpacing
+    S = dcm.ImagePositionPatient
+
+    #TODO: do we even need to handle other cases?
+    @assert Yxyz[1] == 0.0
+    @assert Yxyz[3] == 0.0
+    @assert Xxyz[2] == 0.0
+    @assert Xxyz[3] == 0.0
+    @assert dcm.GridFrameOffsetVector[1] == 0.0
+
+    # TODO: check orientation of S
+    udg = unique(diff(dcm.GridFrameOffsetVector))
+    # note that X and Y axes are swapped for the handled case
+    if length(udg) == 1
+        # grid is uniform, can use ranges
+        return (
+            range(S[2]; length=Nx, step=Xxyz[1] * Δi),
+            range(S[1]; length=Ny, step=Yxyz[2] * Δj),
+            range(S[3]; length=Nz, step=udg[]),
+        )
+    else
+        println("Uneqal frame offsets!")
+        println("udg = ", udg)
+        return (
+            range(S[2]; length=Nx, step=Xxyz[1] * Δi),
+            range(S[1]; length=Ny, step=Yxyz[2] * Δj),
+            S[3] .+ dcm.GridFrameOffsetVector,
+        )
+    end
+end
+
+function fill_doses_slice(out, dose_itp, M, z)
+    # note that X and Y axes are swapped for the handled case
+    for x in axes(out, 1), y in axes(out, 2)
+        pos = M * @SVector [(y-1), (x-1), 0, 1]
+        out[x, y, z] = dose_itp(pos[2], pos[1], pos[3])
+    end
+end
+
 function transform_doses(dcm, ct_files)
     dcm_ct = ct_files[1].dcms[1]
     doses = dcm.PixelData * dcm.DoseGridScaling
-    percentage_scale = dcm.PixelSpacing ./ dcm_ct.PixelSpacing
     N = length(ct_files[1].dcms)
-    new_size = (trunc.(Int, size(doses)[1:2] .* percentage_scale)..., N)
-    println("new_size: ", new_size)
-    println("percentage_scale: ", percentage_scale)
-    println("size(doses): ", size(doses))
-    img_rescaled = imresize(doses, new_size)
+
+    # 1) go from CT position to global coordinates
+    # 2) go from global coordinates to dose position 
+    dose_grid = get_dose_grid(dcm)
+    dose_itp = extrapolate(interpolate(dose_grid, doses, Gridded(Linear())), zero(eltype(doses)))
+
     out = zeros(size(dcm_ct.PixelData)..., N)
-    shift_1 = -trunc(Int, dcm_ct.ImagePositionPatient[2] / dcm_ct.PixelSpacing[2] - dcm.ImagePositionPatient[2] / dcm_ct.PixelSpacing[2])
-    shift_2 = -trunc(Int, dcm_ct.ImagePositionPatient[1] / dcm_ct.PixelSpacing[1] - dcm.ImagePositionPatient[1] / dcm_ct.PixelSpacing[1])
-    # shift_1 = -trunc(Int, dcm.ImagePositionPatient[2] / dcm.PixelSpacing[2])+90
-    # shift_2 = -trunc(Int, dcm.ImagePositionPatient[1] / dcm.PixelSpacing[1])
-    for i = 1:N
-        copyto!(
-            view(out, shift_1:(shift_1+new_size[1]-1), shift_2:(shift_2+new_size[2]-1), N - i + 1),
-            img_rescaled[:, :, i],
-        )
+    for z in 1:N
+        M = get_transform_matrix_ct(ct_files[1].dcms[z])
+        fill_doses_slice(out, dose_itp, M, z)
     end
+
     return out
 end
 
@@ -98,7 +184,7 @@ function find_matching_seqs(sop_uid, dcm_rs, ROIname)
         if ssr.ROIName != ROIname
             continue
         end
-        # println(ssr)
+        #println(ssr)
         ROIs = [rcs for rcs in dcm_rs.ROIContourSequence if rcs.ReferencedROINumber == ssr.ROINumber]
         ROI = ROIs[1]
         if ROI.ContourSequence !== nothing
@@ -106,12 +192,14 @@ function find_matching_seqs(sop_uid, dcm_rs, ROIname)
                 alleq = true
                 if seq.ContourImageSequence !== nothing
                     for cis in seq.ContourImageSequence
-                        # println(cis.ReferencedSOPInstanceUID)
+                        #println(cis.ReferencedSOPInstanceUID)
                         if cis.ReferencedSOPInstanceUID != sop_uid
                             alleq = false
                             break
                         end
                     end
+                else
+                    alleq = false
                 end
                 if alleq
                     push!(seqs, seq)
@@ -131,16 +219,19 @@ function extract_roi_masks(dcm_ct, dcm_rs)
     roi_to_mask = Dict{String,Array{Bool,3}}()
 
     for cont in cont_seq
-        mask = zeros(Bool, 512, 512, length(dcm_ct.dcms))
+        mask = zeros(Bool, w, h, length(dcm_ct.dcms))
         name = get_ROI_name(dcm_rs, cont.ReferencedROINumber)
         for (i, cur_dcm) in enumerate(dcm_ct.dcms)
+            ct_transl = [cur_dcm.ImagePositionPatient[1:2]..., 0.0]
             M = get_transform_matrix(cur_dcm)
             buffer = zeros(UInt32, w, h)
             for cs in find_matching_seqs(cur_dcm.SOPInstanceUID, dcm_rs, name)
+
                 cd = reshape(cs.ContourData, 3, :)
-                cd[3, :] .= 1
+                cd[3,:] .= 1
+                cd .-= ct_transl
                 cd = M' * cd
-                cd = cd[[2, 1], :]
+                cd = cd[[2,1], :] .- [w/2, h/2]
 
                 luxvert = map(c -> Luxor.Point(c...), eachcol(cd))
                 @imagematrix! buffer begin
@@ -149,7 +240,7 @@ function extract_roi_masks(dcm_ct, dcm_rs)
                     Luxor.poly(luxvert, :fill)
                 end 512 512
             end
-            graybuff = Gray.(Images.RGB{Float64}.(buffer))
+            graybuff = Gray.(ColorTypes.RGB{Float64}.(buffer))
             mask[:, :, i] .= graybuff .> 0.5
         end
         roi_to_mask[string(name)] = mask
@@ -197,9 +288,12 @@ end
 
 """
     make_CT_mesh(ct_files, isolevel::Float64=1200.0; body_mask=nothing)
+
 Make a mesh representing the given isolevel of a CT image given in `ct_files`. The argument
 `ct_files` can be taken from `DoseData`.
+
 # Arguments
+
 * `isolevel` should be specified in [Hounsfield scale](https://en.wikipedia.org/wiki/Hounsfield_scale).
 * `body_mask` can be `nothing` (and then it does nothing) or a 3D boolean array of the same
     size as CT pixel array. If specified, the CT images is trimmed to `true` values in the
@@ -274,6 +368,121 @@ function make_mesh(doses, ct_files, roi_masks, rois_to_plot = [];
     end
 
     return scene
+end
+
+"""
+    read_f0(fname)
+
+Read Primo f0 file with simulated delivered doses.
+"""
+function read_f0(fname)
+    file = open(fname)
+    for i in 1:7 # skipping comments
+        readline(file)
+    end
+    # x y z sizes (x-z change within a single slice)
+    # changes to z, x, y for returning
+    img_size = parse.(Int, split(readline(file))[2:end])
+    readline(file) # comment
+    voxel_size = parse.(Float64, split(readline(file))[2:end]) # in cm
+    #println("PRIMO voxel size:", voxel_size)
+    #println("PRIMO img size:", img_size)
+    new_size = (img_size[3], img_size[1], img_size[2])
+    doses = zeros(new_size...) # doses in eV/g
+    two_sigmas = zeros(new_size...) # errors of doses
+    readline(file)
+    for z in 1:img_size[3]
+        readline(file)
+        readline(file)
+        for y in 1:img_size[2]
+            readline(file)
+            readline(file)
+            for x in 1:img_size[1]
+                rl = readline(file)
+                curline = parse.(Float64, split(rl))
+                doses[z, x, img_size[2]-y+1] = curline[1]
+                two_sigmas[z, x, img_size[2]-y+1] = curline[2]
+            end
+        end
+    end
+    close(file)
+    even_newer_size = (512, 512, new_size[3])
+    doses_rescaled = imresize(doses, even_newer_size)
+    two_sigmas_rescaled = imresize(two_sigmas, even_newer_size)
+    return doses_rescaled, two_sigmas_rescaled
+end
+
+
+function my_deduplicate_knots!(knots)
+    last_knot = first(knots)
+    for i = eachindex(knots)
+        if i == 1
+            continue
+        end
+        if knots[i] == last_knot || knots[i] <= knots[i-1]
+            @inbounds knots[i] = nextfloat(knots[i-1])
+        else
+            last_knot = @inbounds knots[i]
+        end
+    end
+    knots
+end
+
+function calc_dvh_for_doses(q, doses)
+    if length(doses) == 0
+        return NaN .* q
+    end
+    doses = vec(doses)
+    sdoses = sort(doses)
+
+    target_range = range(0.0, 1.0; length = length(doses))
+    sdoses = my_deduplicate_knots!(sdoses)
+    f = extrapolate(interpolate((sdoses,), target_range, Gridded(Linear())), Flat())
+    return 1.0 .- f.(q)
+end
+
+
+"""
+    calc_plots_data(dd::DoseData; N=1000)
+
+Calculate FPRs, FNRs, Dice coefficients and Hausdorff distances for each ROI
+for each isodose level from 0 to maximum of planned doses, at `N` levels.
+"""
+function calc_plots_data(dd::DoseData; N=1000)
+
+    md = maximum(dd.doses)
+    q = range(0.0, md; length=N)
+
+    ct_1 = dd.ct_files[1].dcms[1]
+    hausdorff_weights = (ct_1.PixelSpacing..., ct_1.SliceThickness)
+
+    roi_to_plotdata = Dict{String,NamedTuple}()
+    for (roi_name, roi_mask) in dd.roi_masks
+
+        fprs = zeros(N)
+        fnrs = zeros(N)
+        dcs = zeros(N)
+        hausd = zeros(N)
+        println("ROI: ", roi_name)
+        Threads.@threads for i in 1:length(q)
+            level = q[i]
+            cm = confusion_matrix_at_level(dd.doses, dd.primo_filtered_in_Gy, roi_mask, level)
+            print("\r", level, " ", cm)
+            fprs[i] = cm.fp/(cm.fp+cm.tn)
+            fnrs[i] = cm.fn/(cm.fn+cm.tp)
+            dcs[i] = 2*cm.tp/(2*cm.tp+cm.fp+cm.fn)
+            hausd[i] = hausdorff_distance(dd.doses, dd.primo_filtered_in_Gy, roi_mask, hausdorff_weights, level)
+            #println("h for level $level =", hausd[i])
+        end
+        println("")
+
+        fq_TPS = calc_dvh_for_doses(q, dd.doses[roi_mask])
+        fq_Primo = calc_dvh_for_doses(q, dd.primo_filtered_in_Gy[roi_mask])
+
+        roi_to_plotdata[roi_name] = (; DVH_TPS = fq_TPS, DVH_Primo = fq_Primo, fpr = fprs, fnr = fnrs, dice = dcs, hausd = hausd)
+    end
+    
+    return (q, roi_to_plotdata)
 end
 
 # modalities:
