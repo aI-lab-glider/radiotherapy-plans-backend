@@ -27,9 +27,10 @@ using Meshing
 using MeshIO
 using GeometryBasics
 using StaticArrays
-using ColorSchemes
 using Statistics
 using Luxor
+using ColorTypes
+using ImageDistances
 
 
 function get_transform_matrix(dcm)
@@ -88,6 +89,10 @@ function get_dose_grid(dcm)
 
     # TODO: check orientation of S
     udg = unique(diff(dcm.GridFrameOffsetVector))
+    if !isa(dcm.SliceThickness, Real)
+        println("Substituting SliceThickness: ", dcm.SliceThickness)
+        dcm.SliceThickness = mean(udg) # saving for later
+    end
     # note that X and Y axes are swapped for the handled case
     if length(udg) == 1
         # grid is uniform, can use ranges
@@ -398,6 +403,35 @@ struct DoseData{TCT,TPD,TRM,TDD}
     primo_filtered_in_Gy::TDD
 end
 
+function confusion_matrix_at_level(doses_expected, doses_measured, mask_inds, level::Real)
+    mask_expected = doses_expected .>= level
+    mask_measured = doses_measured .>= level
+    tn = 0
+    tp = 0
+    fn = 0
+    fp = 0
+    for i in mask_inds
+        if mask_expected[i] && mask_measured[i]
+            tp += 1
+        elseif mask_expected[i] && !(mask_measured[i])
+            fn += 1
+        elseif !(mask_expected[i]) && mask_measured[i]
+            fp += 1
+        else
+            tn += 1
+        end
+    end
+    return (; tp = tp, tn = tn, fn = fn, fp = fp)
+end
+
+function hausdorff_distance(doses_expected, doses_measured, mask, weights, level::Real)
+    d = GenericHausdorff(ImageDistances.MaxReduction(), ImageDistances.MaxReduction(), weights)
+    mask_expected = (doses_expected .>= level) .& mask
+    mask_measured = (doses_measured .>= level) .& mask
+    return d(mask_expected, mask_measured)
+end
+
+
 
 """
     calc_plots_data(dd::DoseData; N=1000)
@@ -408,14 +442,7 @@ for each isodose level from 0 to maximum of planned doses, at `N` levels.
 function calc_plots_data(dd::DoseData; N=1000)
 
     roi_to_plotdata = Dict{String,NamedTuple}()
-    boolmask = convert(Array{Bool}, mask)
-    md = NaN
-    try
-        # can fail for empty ROIs
-        md = max(maximum(dd.doses[boolmask]), maximum(dd.primo_filtered_in_Gy[boolmask]))
-    catch e
-        return ([], roi_to_plotdata)
-    end
+    md = max(maximum(dd.doses), maximum(dd.primo_filtered_in_Gy))
     q = range(0.0, md; length=N)
 
     ct_1 = dd.ct_files[1].dcms[1]
@@ -427,18 +454,20 @@ function calc_plots_data(dd::DoseData; N=1000)
         fnrs = zeros(N)
         dcs = zeros(N)
         hausd = zeros(N)
-        println("ROI: ", roi_name)
-        Threads.@threads for i in 1:length(q)
+        #println("ROI: ", roi_name)
+        mask_inds = findall(vec(roi_mask))
+        for i in 1:length(q)
             level = q[i]
-            cm = confusion_matrix_at_level(dd.doses, dd.primo_filtered_in_Gy, roi_mask, level)
-            print("\r", level, " ", cm)
+            cm = confusion_matrix_at_level(dd.doses, dd.primo_filtered_in_Gy, mask_inds, level)
             fprs[i] = cm.fp/(cm.fp+cm.tn)
             fnrs[i] = cm.fn/(cm.fn+cm.tp)
             dcs[i] = 2*cm.tp/(2*cm.tp+cm.fp+cm.fn)
-            hausd[i] = hausdorff_distance(dd.doses, dd.primo_filtered_in_Gy, roi_mask, hausdorff_weights, level)
+            if hausdorff_weights isa NTuple{3,Real}
+                hausd[i] = hausdorff_distance(dd.doses, dd.primo_filtered_in_Gy, roi_mask, hausdorff_weights, level)
+            end
             #println("h for level $level =", hausd[i])
         end
-        println("")
+        #println("")
 
         fq_TPS = calc_dvh_for_doses(q, dd.doses[roi_mask])
         fq_Primo = calc_dvh_for_doses(q, dd.primo_filtered_in_Gy[roi_mask])

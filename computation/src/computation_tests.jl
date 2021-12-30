@@ -23,6 +23,7 @@ include("computation.jl")
 using Images, ImageView
 using Plots
 using Makie
+using ColorSchemes
 
 using GLMakie
 GLMakie.enable_SSAO[] = false
@@ -94,7 +95,7 @@ end
 
 Base path to HNSCC data files. They can be downloaded using the provided manifest file.
 """
-# const HNSCC_BASE_PATH = "test-data/HNSCC/HNSCC/"
+# const HNSCC_BASE_PATH = "../test-data/HNSCC/HNSCC/"
 
 # ### loading a sample file from the NBIA dataset
 # hnscc_7 = load_DICOMs(
