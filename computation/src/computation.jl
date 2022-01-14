@@ -140,15 +140,24 @@ function transform_doses(dcm, ct_files)
     return out
 end
 
-function load_dicom(dir)
-    dcms = dcmdir_parse(dir)
-    loaded_dcms = Dict()
+function dcmdir_parse_skip_noin(dir; kwargs...)
+    dicom_files = DICOM.find_dicom_files(dir)
+    unsorted_dicoms = [dcm_parse(file; kwargs...) for file in dicom_files]
+    unsorted_dicoms = filter(d -> isa(d.InstanceNumber, Int), unsorted_dicoms)
+    dicoms = sort!(unsorted_dicoms, by = dicom -> dicom[tag"Instance Number"])
+    return dicoms
+end
+
+function load_dicom(dir, modality = "CT")
+    dcms = dcmdir_parse_skip_noin(dir)
+    loaded_dcms = NamedTuple[]
     # 'dcms' could contain data for different series, so we have to filter by series
     unique_series = unique([dcm.SeriesInstanceUID for dcm in dcms])
-    for (idx, series) in enumerate(unique_series)
-        dcms_in_series = filter(dcm -> dcm.SeriesInstanceUID == series, dcms)
+    for series in unique_series
+        dcms_in_series = filter(dcm -> dcm.SeriesInstanceUID == series && dcm.Modality == modality, dcms)
+        length(dcms_in_series) > 0 || continue
         pixeldata = extract_pixeldata(dcms_in_series)
-        loaded_dcms[idx] = (; pixeldata = pixeldata, dcms = dcms_in_series)
+        push!(loaded_dcms, (; pixeldata = pixeldata, dcms = dcms_in_series))
     end
     return loaded_dcms
 end
@@ -485,13 +494,15 @@ end
 # RTSTRUCT: structures in the CT scan
 
 """
-    load_DICOMs(CT_fname, dose_sum_fname, rs_fname)
+    load_DICOMs(CT_fname, dose_sum_fname, rs_fname, primo_file=nothing)
 
 Load given DICOM files.
+If `primo_file` is specified then it will be used to determine "measurement" data.
+Otherwise planned dose with a random noise will be used as a substitute.
 
 TODO: support multiple dose files.
 """
-function load_DICOMs(CT_fname, dose_sum_fname, rs_fname)
+function load_DICOMs(CT_fname, dose_sum_fname, rs_fname, primo_file=nothing)
     dcm_data = dcm_parse(dose_sum_fname)
     ct_files = load_dicom(CT_fname)
     doses = transform_doses(dcm_data, ct_files)
@@ -499,11 +510,27 @@ function load_DICOMs(CT_fname, dose_sum_fname, rs_fname)
     dcm_rs = dcm_parse(rs_fname)
     roi_masks = extract_roi_masks(ct_files[1], dcm_rs)
 
-    primo_in_Gy = doses .* min.(Ref(1.5), sqrt.(exp.(randn(size(doses)...))))
-    slth = get_slice_thickness(ct_files)
+    if primo_file === nothing
+        primo_in_Gy = doses .* min.(Ref(1.5), sqrt.(exp.(randn(size(doses)...))))
+        slth = get_slice_thickness(ct_files)
 
-    filtering_steps = (ct_files[1].dcms[1].PixelSpacing..., slth)
-    primo_filtered_in_Gy = imfilter(primo_in_Gy, Kernel.gaussian(0.8 ./ filtering_steps))
+        filtering_steps = (ct_files[1].dcms[1].PixelSpacing..., slth)
+        primo_filtered_in_Gy = imfilter(primo_in_Gy, Kernel.gaussian(0.8 ./ filtering_steps))
+    else
+        primo_doses, primo_errors = read_f0(primo_file)
+
+        ptv_roi_names = filter(x -> contains(x, "CTV") || contains(x, "PTV"), collect(keys(roi_masks)))
+        factor = if length(ptv_roi_names) == 0
+            primo_scaling_factor(dcm_plan)
+        else
+            ptv_roi_name = argmax(name -> sum(roi_masks[name]), ptv_roi_names)
+            mean_dose_over_mask(roi_masks[ptv_roi_name], doses) / mean_dose_over_mask(roi_masks[ptv_roi_name], primo_doses)
+        end
+        
+        primo_in_Gy = primo_doses * factor
+        filtering_steps = (ct_dcm.PixelSpacing..., ct_dcm.SliceThickness)
+        primo_filtered_in_Gy = imfilter(primo_in_Gy, Kernel.gaussian(0.8 ./ filtering_steps))
+    end
 
     return DoseData(ct_files, doses, roi_masks, primo_filtered_in_Gy)
 end
@@ -530,6 +557,7 @@ end
 
 """
     make_ROI_mesh(dd::DoseData, roi_name, roi_mesh_fname)
+
 Prepare mesh of ROI boundary for for the region of name `roi_name`. The mesh is saved in
 file `roi_mesh_fname`.
 """
@@ -539,5 +567,37 @@ function make_ROI_mesh(dd::DoseData, roi_name, roi_mesh_fname)
     roi_mesh = make_normals(convert(Array{Float32}, dd.roi_masks[roi_name]), algo_roi, origin, widths)
     save(roi_mesh_fname, roi_mesh)
     return roi_mesh_fname
+end
+
+function trim_doses(dd::DoseData, input_doses; body_mask = nothing, roi_name = nothing)
+    trimmed_doses = copy(input_doses)
+    if body_mask !== nothing
+        trimmed_doses[(!).(body_mask)] .= false
+    end
+    if roi_name !== nothing
+        trimmed_doses[(!).(dd.roi_masks[roi_name])] .= false
+    end
+    return trimmed_doses
+end
+
+"""
+    create_hot_cold_meshes(dd::DoseData, hot_cold_level::Float64, roi_name::String)
+
+Create meshes for hot and cold regions (to be displayed as red and blue, respectively) for given isodose level
+`hot_cold_level` and ROI `roi_name`.
+"""
+function create_hot_cold_meshes(dd::DoseData, hot_cold_level::Float64, roi_name::String)
+    doses = dd.doses
+    primo_doses = dd.primo_filtered_in_Gy
+    origin, widths = ct_origin_widths(dd.ct_files)
+
+    hotness = trim_doses(dd, (doses .<= hot_cold_level) .& (primo_doses .>= hot_cold_level); roi_name = roi_name)
+    coldness = trim_doses(dd, (doses .>= hot_cold_level) .& (primo_doses .<= hot_cold_level); roi_name = roi_name)
+
+    algo = MarchingCubes(iso=0.5, insidepositive=true)
+    
+    mesh_hot = make_normals(hotness, algo, origin, widths)
+    mesh_cold = make_normals(coldness, algo, origin, widths)
+    return mesh_hot, mesh_cold
 end
 
