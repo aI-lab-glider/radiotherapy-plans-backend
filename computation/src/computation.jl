@@ -516,7 +516,7 @@ function load_DICOMs(CT_fname, dose_sum_fname, rs_fname, primo_file=nothing)
         filtering_steps = (ct_files[1].dcms[1].PixelSpacing..., slth)
         primo_filtered_in_Gy = imfilter(primo_in_Gy, Kernel.gaussian(0.8 ./ filtering_steps))
     else
-        primo_doses, primo_errors = read_f0(primo_fname)
+        primo_doses, primo_errors = read_f0(primo_file)
 
         ptv_roi_names = filter(x -> contains(x, "CTV") || contains(x, "PTV"), collect(keys(roi_masks)))
         factor = if length(ptv_roi_names) == 0
