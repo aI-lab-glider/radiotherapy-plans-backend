@@ -556,6 +556,7 @@ end
 
 """
     make_ROI_mesh(dd::DoseData, roi_name, roi_mesh_fname)
+
 Prepare mesh of ROI boundary for for the region of name `roi_name`. The mesh is saved in
 file `roi_mesh_fname`.
 """
@@ -565,5 +566,37 @@ function make_ROI_mesh(dd::DoseData, roi_name, roi_mesh_fname)
     roi_mesh = make_normals(convert(Array{Float32}, dd.roi_masks[roi_name]), algo_roi, origin, widths)
     save(roi_mesh_fname, roi_mesh)
     return roi_mesh_fname
+end
+
+function trim_doses(dd::DoseData, input_doses; body_mask = nothing, roi_name = nothing)
+    trimmed_doses = copy(input_doses)
+    if body_mask !== nothing
+        trimmed_doses[(!).(body_mask)] .= false
+    end
+    if roi_name !== nothing
+        trimmed_doses[(!).(dd.roi_masks[roi_name])] .= false
+    end
+    return trimmed_doses
+end
+
+"""
+    create_hot_cold_meshes(dd::DoseData, hot_cold_level::Float64, roi_name::String)
+
+Create meshes for hot and cold regions (to be displayed as red and blue, respectively) for given isodose level
+`hot_cold_level` and ROI `roi_name`.
+"""
+function create_hot_cold_meshes(dd::DoseData, hot_cold_level::Float64, roi_name::String)
+    doses = dd.doses
+    primo_doses = dd.primo_filtered_in_Gy
+    origin, widths = ct_origin_widths(dd.ct_files)
+
+    hotness = trim_doses(dd, (doses .<= hot_cold_level) .& (primo_doses .>= hot_cold_level); roi_name = roi_name)
+    coldness = trim_doses(dd, (doses .>= hot_cold_level) .& (primo_doses .<= hot_cold_level); roi_name = roi_name)
+
+    algo = MarchingCubes(iso=0.5, insidepositive=true)
+    
+    mesh_hot = make_normals(hotness, algo, origin, widths)
+    mesh_cold = make_normals(coldness, algo, origin, widths)
+    return mesh_hot, mesh_cold
 end
 
