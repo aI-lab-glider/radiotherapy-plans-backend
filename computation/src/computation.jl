@@ -139,15 +139,16 @@ function transform_doses(dcm, ct_files)
     return out
 end
 
-function load_dicom(dir)
-    dcms = dcmdir_parse(dir)
-    loaded_dcms = Dict()
+function load_dicom(dir, modality = "CT")
+    dcms = dcmdir_parse_skip_noin(dir)
+    loaded_dcms = NamedTuple[]
     # 'dcms' could contain data for different series, so we have to filter by series
     unique_series = unique([dcm.SeriesInstanceUID for dcm in dcms])
-    for (idx, series) in enumerate(unique_series)
-        dcms_in_series = filter(dcm -> dcm.SeriesInstanceUID == series, dcms)
+    for series in unique_series
+        dcms_in_series = filter(dcm -> dcm.SeriesInstanceUID == series && dcm.Modality == modality, dcms)
+        length(dcms_in_series) > 0 || continue
         pixeldata = extract_pixeldata(dcms_in_series)
-        loaded_dcms[idx] = (; pixeldata = pixeldata, dcms = dcms_in_series)
+        push!(loaded_dcms, (; pixeldata = pixeldata, dcms = dcms_in_series))
     end
     return loaded_dcms
 end
@@ -484,13 +485,15 @@ end
 # RTSTRUCT: structures in the CT scan
 
 """
-    load_DICOMs(CT_fname, dose_sum_fname, rs_fname)
+    load_DICOMs(CT_fname, dose_sum_fname, rs_fname, primo_file=nothing)
 
 Load given DICOM files.
+If `primo_file` is specified then it will be used to determine "measurement" data.
+Otherwise planned dose with a random noise will be used as a substitute.
 
 TODO: support multiple dose files.
 """
-function load_DICOMs(CT_fname, dose_sum_fname, rs_fname)
+function load_DICOMs(CT_fname, dose_sum_fname, rs_fname, primo_file=nothing)
     dcm_data = dcm_parse(dose_sum_fname)
     ct_files = load_dicom(CT_fname)
     doses = transform_doses(dcm_data, ct_files)
@@ -498,11 +501,27 @@ function load_DICOMs(CT_fname, dose_sum_fname, rs_fname)
     dcm_rs = dcm_parse(rs_fname)
     roi_masks = extract_roi_masks(ct_files[1], dcm_rs)
 
-    primo_in_Gy = doses .* min.(Ref(1.5), sqrt.(exp.(randn(size(doses)...))))
-    slth = get_slice_thickness(ct_files)
+    if primo_file === nothing
+        primo_in_Gy = doses .* min.(Ref(1.5), sqrt.(exp.(randn(size(doses)...))))
+        slth = get_slice_thickness(ct_files)
 
-    filtering_steps = (ct_files[1].dcms[1].PixelSpacing..., slth)
-    primo_filtered_in_Gy = imfilter(primo_in_Gy, Kernel.gaussian(0.8 ./ filtering_steps))
+        filtering_steps = (ct_files[1].dcms[1].PixelSpacing..., slth)
+        primo_filtered_in_Gy = imfilter(primo_in_Gy, Kernel.gaussian(0.8 ./ filtering_steps))
+    else
+        primo_doses, primo_errors = read_f0(primo_fname)
+
+        ptv_roi_names = filter(x -> contains(x, "CTV") || contains(x, "PTV"), collect(keys(roi_masks)))
+        factor = if length(ptv_roi_names) == 0
+            primo_scaling_factor(dcm_plan)
+        else
+            ptv_roi_name = argmax(name -> sum(roi_masks[name]), ptv_roi_names)
+            mean_dose_over_mask(roi_masks[ptv_roi_name], doses) / mean_dose_over_mask(roi_masks[ptv_roi_name], primo_doses)
+        end
+        
+        primo_in_Gy = primo_doses * factor
+        filtering_steps = (ct_dcm.PixelSpacing..., ct_dcm.SliceThickness)
+        primo_filtered_in_Gy = imfilter(primo_in_Gy, Kernel.gaussian(0.8 ./ filtering_steps))
+    end
 
     return DoseData(ct_files, doses, roi_masks, primo_filtered_in_Gy)
 end
