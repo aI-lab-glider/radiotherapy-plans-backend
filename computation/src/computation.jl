@@ -31,6 +31,7 @@ using Statistics
 using Luxor
 using ColorTypes
 using ImageDistances
+using FileIO
 
 
 function get_transform_matrix(dcm)
@@ -58,12 +59,12 @@ function get_transform_matrix_ct(dcm)
     Δi, Δj = dcm.PixelSpacing
     S = dcm.ImagePositionPatient
     M = SMatrix{4,4,Float64}([
-        Xxyz[1] * Δi Yxyz[1]*Δj 0 S[1];
-        Xxyz[2] * Δi Yxyz[2]*Δj 0 S[2];
-        Xxyz[3] * Δi Yxyz[3]*Δj 0 S[3];
-        0            0          0 1;
+        Xxyz[1]*Δi Yxyz[1]*Δj 0 S[1]
+        Xxyz[2]*Δi Yxyz[2]*Δj 0 S[2]
+        Xxyz[3]*Δi Yxyz[3]*Δj 0 S[3]
+        0 0 0 1
     ])
-    
+
     return M
 end
 
@@ -97,16 +98,16 @@ function get_dose_grid(dcm)
     if length(udg) == 1
         # grid is uniform, can use ranges
         return (
-            range(S[2]; length=Nx, step=Xxyz[1] * Δi),
-            range(S[1]; length=Ny, step=Yxyz[2] * Δj),
-            range(S[3]; length=Nz, step=udg[]),
+            range(S[2]; length = Nx, step = Xxyz[1] * Δi),
+            range(S[1]; length = Ny, step = Yxyz[2] * Δj),
+            range(S[3]; length = Nz, step = udg[]),
         )
     else
         println("Uneqal frame offsets!")
         println("udg = ", udg)
         return (
-            range(S[2]; length=Nx, step=Xxyz[1] * Δi),
-            range(S[1]; length=Ny, step=Yxyz[2] * Δj),
+            range(S[2]; length = Nx, step = Xxyz[1] * Δi),
+            range(S[1]; length = Ny, step = Yxyz[2] * Δj),
             S[3] .+ dcm.GridFrameOffsetVector,
         )
     end
@@ -115,7 +116,7 @@ end
 function fill_doses_slice(out, dose_itp, M, z)
     # note that X and Y axes are swapped for the handled case
     for x in axes(out, 1), y in axes(out, 2)
-        pos = M * @SVector [(y-1), (x-1), 0, 1]
+        pos = M * @SVector [(y - 1), (x - 1), 0, 1]
         out[x, y, z] = dose_itp(pos[2], pos[1], pos[3])
     end
 end
@@ -229,10 +230,10 @@ function extract_roi_masks(dcm_ct, dcm_rs)
             for cs in find_matching_seqs(cur_dcm.SOPInstanceUID, dcm_rs, name)
 
                 cd = reshape(cs.ContourData, 3, :)
-                cd[3,:] .= 1
+                cd[3, :] .= 1
                 cd .-= ct_transl
                 cd = M' * cd
-                cd = cd[[2,1], :] .- [w/2, h/2]
+                cd = cd[[2, 1], :] .- [w / 2, h / 2]
 
                 luxvert = map(c -> Luxor.Point(c...), eachcol(cd))
                 @imagematrix! buffer begin
@@ -349,8 +350,8 @@ function read_f0(fname)
     end
 
     if all(z_pos_diffs(ct_files) .> 0)
-        doses .= reverse(doses; dims=3)
-        two_sigmas .= reverse(two_sigmas; dims=3)
+        doses .= reverse(doses; dims = 3)
+        two_sigmas .= reverse(two_sigmas; dims = 3)
     end
 
     close(file)
@@ -439,11 +440,11 @@ end
 Calculate FPRs, FNRs, Dice coefficients and Hausdorff distances for each ROI
 for each isodose level from 0 to maximum of planned doses, at `N` levels.
 """
-function calc_plots_data(dd::DoseData; N=1000)
+function calc_plots_data(dd::DoseData; N = 1000)
 
     roi_to_plotdata = Dict{String,NamedTuple}()
     md = max(maximum(dd.doses), maximum(dd.primo_filtered_in_Gy))
-    q = range(0.0, md; length=N)
+    q = range(0.0, md; length = N)
 
     ct_1 = dd.ct_files[1].dcms[1]
     hausdorff_weights = (ct_1.PixelSpacing..., ct_1.SliceThickness)
@@ -459,9 +460,9 @@ function calc_plots_data(dd::DoseData; N=1000)
         for i in 1:length(q)
             level = q[i]
             cm = confusion_matrix_at_level(dd.doses, dd.primo_filtered_in_Gy, mask_inds, level)
-            fprs[i] = cm.fp/(cm.fp+cm.tn)
-            fnrs[i] = cm.fn/(cm.fn+cm.tp)
-            dcs[i] = 2*cm.tp/(2*cm.tp+cm.fp+cm.fn)
+            fprs[i] = cm.fp / (cm.fp + cm.tn)
+            fnrs[i] = cm.fn / (cm.fn + cm.tp)
+            dcs[i] = 2 * cm.tp / (2 * cm.tp + cm.fp + cm.fn)
             if hausdorff_weights isa NTuple{3,Real}
                 hausd[i] = hausdorff_distance(dd.doses, dd.primo_filtered_in_Gy, roi_mask, hausdorff_weights, level)
             end
@@ -474,7 +475,7 @@ function calc_plots_data(dd::DoseData; N=1000)
 
         roi_to_plotdata[roi_name] = (; DVH_TPS = fq_TPS, DVH_Primo = fq_Primo, fpr = fprs, fnr = fnrs, dice = dcs, hausd = hausd)
     end
-    
+
     return (q, roi_to_plotdata)
 end
 

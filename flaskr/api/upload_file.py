@@ -7,7 +7,7 @@ import zipfile
 from flask_restful import Resource, reqparse
 import werkzeug
 from api.config import DICOMS_DIR, UPLOAD_DIR
-from api.calculate_mesh import CalculateMesh, MeshParams
+from api.calculate_mesh import CalculateMeshLogic, CalculateCtMeshParams
 from dataclasses import dataclass
 from flask import send_file
 
@@ -43,8 +43,8 @@ class UploadFilesGetParams:
 class UploadFile(Resource):
 
     def __init__(self):
-        self._mesh_logic = CalculateMesh()
-        self._last_mesh_params: Optional[MeshParams] = None
+        self._mesh_logic = CalculateMeshLogic()
+        self._last_mesh_params: Optional[CalculateCtMeshParams] = None
         if not UPLOAD_DIR.exists():
             UPLOAD_DIR.mkdir(parents=True)
 
@@ -55,7 +55,7 @@ class UploadFile(Resource):
     def post(self):
         body = UploadFilesPostParams.from_request()
         unpacked_dicoms_path = self._save_zip(body.dicom_archive)
-        self._last_mesh_params = MeshParams(
+        self._last_mesh_params = CalculateCtMeshParams(
             ct_fname=str(unpacked_dicoms_path.absolute()/'ctFiles'),
             dose_fname=str(unpacked_dicoms_path.absolute() /
                            'rtDoseFile'/'0.dcm'),

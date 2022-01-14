@@ -27,18 +27,14 @@ end
 route("/MakeRoiMesh", method = POST) do
     payload = jsonpayload()
     CT_fname, dose_sum_fname, rs_fname = payload["ct_fname"], payload["dose_fname"], payload["rs_fname"]
-    roi_mesh = payload["roi_mesh"]
+    f_name = payload["save_to"]
+    roi_name = payload["roi_name"]
 
-    cache_key = CT_fname * dose_sum_fname * rs_fname
-    dicoms = withcache(cache_key) do
-        dose_data = load_DICOMs(CT_fname, dose_sum_fname, rs_fname)
-    end
+    dose_data = load_DICOMs(CT_fname, dose_sum_fname, rs_fname)
 
-    mesh_location = withcache(cache_key * roi_mesh) do
-        make_ROI_mesh(dose_data, roi_name, cache_key)
-    end
+    roi_mesh_fname = make_ROI_mesh(dose_data, roi_name, f_name)
 
-    return mesh_location
+    return roi_mesh_fname
 end
 
 port = config["GENIE_PORT"]
