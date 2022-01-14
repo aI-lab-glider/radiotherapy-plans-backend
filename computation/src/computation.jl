@@ -139,6 +139,14 @@ function transform_doses(dcm, ct_files)
     return out
 end
 
+function dcmdir_parse_skip_noin(dir; kwargs...)
+    dicom_files = DICOM.find_dicom_files(dir)
+    unsorted_dicoms = [dcm_parse(file; kwargs...) for file in dicom_files]
+    unsorted_dicoms = filter(d -> isa(d.InstanceNumber, Int), unsorted_dicoms)
+    dicoms = sort!(unsorted_dicoms, by = dicom -> dicom[tag"Instance Number"])
+    return dicoms
+end
+
 function load_dicom(dir, modality = "CT")
     dcms = dcmdir_parse_skip_noin(dir)
     loaded_dcms = NamedTuple[]
