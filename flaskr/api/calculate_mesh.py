@@ -19,6 +19,8 @@ class CalculateCtMeshParams:
 @dataclass
 class CalculateRoiMeshParams(CalculateCtMeshParams):
     roi_name: str
+    save_hot: str
+    save_cold: str
 
 class CalculateMeshLogic:
 

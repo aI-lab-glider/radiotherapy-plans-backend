@@ -509,7 +509,7 @@ Otherwise planned dose with a random noise will be used as a substitute.
 
 TODO: support multiple dose files.
 """
-function load_DICOMs(CT_fname, dose_sum_fname, rs_fname, primo_file=nothing)
+function load_DICOMs(CT_fname, dose_sum_fname, rs_fname, primo_file = nothing)
     dcm_data = dcm_parse(dose_sum_fname)
     ct_files = load_dicom(CT_fname)
     doses = transform_doses(dcm_data, ct_files)
@@ -533,7 +533,7 @@ function load_DICOMs(CT_fname, dose_sum_fname, rs_fname, primo_file=nothing)
             ptv_roi_name = argmax(name -> sum(roi_masks[name]), ptv_roi_names)
             mean_dose_over_mask(roi_masks[ptv_roi_name], doses) / mean_dose_over_mask(roi_masks[ptv_roi_name], primo_doses)
         end
-        
+
         primo_in_Gy = primo_doses * factor
         filtering_steps = (ct_dcm.PixelSpacing..., ct_dcm.SliceThickness)
         primo_filtered_in_Gy = imfilter(primo_in_Gy, Kernel.gaussian(0.8 ./ filtering_steps))
@@ -593,7 +593,7 @@ end
 Create meshes for hot and cold regions (to be displayed as red and blue, respectively) for given isodose level
 `hot_cold_level` and ROI `roi_name`.
 """
-function create_hot_cold_meshes(dd::DoseData, hot_cold_level::Float64, roi_name::String)
+function create_hot_cold_meshes(dd::DoseData, hot_cold_level::Float64, roi_name::String, save_cold_mesh::String, save_hot_mesh::String)
     doses = dd.doses
     primo_doses = dd.primo_filtered_in_Gy
     origin, widths = ct_origin_widths(dd.ct_files)
@@ -601,10 +601,12 @@ function create_hot_cold_meshes(dd::DoseData, hot_cold_level::Float64, roi_name:
     hotness = trim_doses(dd, (doses .<= hot_cold_level) .& (primo_doses .>= hot_cold_level); roi_name = roi_name)
     coldness = trim_doses(dd, (doses .>= hot_cold_level) .& (primo_doses .<= hot_cold_level); roi_name = roi_name)
 
-    algo = MarchingCubes(iso=0.5, insidepositive=true)
-    
+    algo = MarchingCubes(iso = 0.5, insidepositive = true)
+    print(algo, mesh_hot, mesh_cold)
     mesh_hot = make_normals(hotness, algo, origin, widths)
     mesh_cold = make_normals(coldness, algo, origin, widths)
+    save(mesh_cold, save_cold_mesh)
+    save(mesh_hot, save_hot_mesh)
     return mesh_hot, mesh_cold
 end
 
