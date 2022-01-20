@@ -15,4 +15,4 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install -r ./flaskr/requirements.txt
-      - run: python -m pylint --disable=E --disable=W --disable=C0103 --disable=R0201 --disable=C0411 --disable=C0305 .\flaskr\
+      - run: python -m pylint --disable=E --disable=W --disable=C0103 --disable=R0201 --disable=C0411 --disable=C0305 .
