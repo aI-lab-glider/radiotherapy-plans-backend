@@ -261,17 +261,16 @@ end
 
 function make_normals(doses, algo, origin, widths)
     mc = GeometryBasics.Mesh(doses, algo; origin = origin, widths = widths)
-
     if length(mc) == 0
         # there is no mesh anyway in this case
         return mc
     end
 
     itp = Interpolations.scale(
-            extrapolate(interpolate(doses, BSpline(Quadratic(Periodic(OnGrid())))), Flat()),
-            range(origin[1], origin[1] + widths[1], length=size(doses,1)),
-            range(origin[2], origin[2] + widths[2], length=size(doses,2)),
-            range(origin[3], origin[3] + widths[3], length=size(doses,3)))
+        extrapolate(interpolate(doses, BSpline(Quadratic(Periodic(OnGrid())))), Flat()),
+        range(origin[1], origin[1] + widths[1], length = size(doses, 1)),
+        range(origin[2], origin[2] + widths[2], length = size(doses, 2)),
+        range(origin[3], origin[3] + widths[3], length = size(doses, 3)))
     normals = [normalize(Vec3f0(Interpolations.gradient(itp, Tuple(v)...))) for v in mc.position]
 
     new_mesh = GeometryBasics.Mesh(GeometryBasics.meta(mc.position; normals = normals), faces(mc))
@@ -602,11 +601,10 @@ function create_hot_cold_meshes(dd::DoseData, hot_cold_level::Float64, roi_name:
     coldness = trim_doses(dd, (doses .>= hot_cold_level) .& (primo_doses .<= hot_cold_level); roi_name = roi_name)
 
     algo = MarchingCubes(iso = 0.5, insidepositive = true)
-    print(algo, mesh_hot, mesh_cold)
     mesh_hot = make_normals(hotness, algo, origin, widths)
     mesh_cold = make_normals(coldness, algo, origin, widths)
-    save(mesh_cold, save_cold_mesh)
-    save(mesh_hot, save_hot_mesh)
+    save(save_hot_mesh, mesh_hot)
+    save(save_cold_mesh, mesh_cold)
     return mesh_hot, mesh_cold
 end
 

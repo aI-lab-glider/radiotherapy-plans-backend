@@ -21,6 +21,7 @@ class CalculateRoiMeshParams(CalculateCtMeshParams):
     roi_name: str
     save_hot: str
     save_cold: str
+    hot_cold_level: float
 
 class CalculateMeshLogic:
 
