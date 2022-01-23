@@ -261,10 +261,17 @@ end
 
 function make_normals(doses, algo, origin, widths)
     mc = GeometryBasics.Mesh(doses, algo; origin = origin, widths = widths)
-    itp = Interpolations.scale(interpolate(doses, BSpline(Quadratic(Periodic(OnGrid())))),
-        range(origin[1], origin[1] + widths[1], length = size(doses, 1)),
-        range(origin[2], origin[2] + widths[2], length = size(doses, 2)),
-        range(origin[3], origin[3] + widths[3], length = size(doses, 3)))
+
+    if length(mc) == 0
+        # there is no mesh anyway in this case
+        return mc
+    end
+
+    itp = Interpolations.scale(
+            extrapolate(interpolate(doses, BSpline(Quadratic(Periodic(OnGrid())))), Flat()),
+            range(origin[1], origin[1] + widths[1], length=size(doses,1)),
+            range(origin[2], origin[2] + widths[2], length=size(doses,2)),
+            range(origin[3], origin[3] + widths[3], length=size(doses,3)))
     normals = [normalize(Vec3f0(Interpolations.gradient(itp, Tuple(v)...))) for v in mc.position]
 
     new_mesh = GeometryBasics.Mesh(GeometryBasics.meta(mc.position; normals = normals), faces(mc))
