@@ -31,6 +31,7 @@ using Statistics
 using Luxor
 using ColorTypes
 using ImageDistances
+using FileIO
 
 
 function get_transform_matrix(dcm)
@@ -58,12 +59,12 @@ function get_transform_matrix_ct(dcm)
     Δi, Δj = dcm.PixelSpacing
     S = dcm.ImagePositionPatient
     M = SMatrix{4,4,Float64}([
-        Xxyz[1] * Δi Yxyz[1]*Δj 0 S[1];
-        Xxyz[2] * Δi Yxyz[2]*Δj 0 S[2];
-        Xxyz[3] * Δi Yxyz[3]*Δj 0 S[3];
-        0            0          0 1;
+        Xxyz[1]*Δi Yxyz[1]*Δj 0 S[1]
+        Xxyz[2]*Δi Yxyz[2]*Δj 0 S[2]
+        Xxyz[3]*Δi Yxyz[3]*Δj 0 S[3]
+        0 0 0 1
     ])
-    
+
     return M
 end
 
@@ -97,16 +98,16 @@ function get_dose_grid(dcm)
     if length(udg) == 1
         # grid is uniform, can use ranges
         return (
-            range(S[2]; length=Nx, step=Xxyz[1] * Δi),
-            range(S[1]; length=Ny, step=Yxyz[2] * Δj),
-            range(S[3]; length=Nz, step=udg[]),
+            range(S[2]; length = Nx, step = Xxyz[1] * Δi),
+            range(S[1]; length = Ny, step = Yxyz[2] * Δj),
+            range(S[3]; length = Nz, step = udg[]),
         )
     else
         println("Uneqal frame offsets!")
         println("udg = ", udg)
         return (
-            range(S[2]; length=Nx, step=Xxyz[1] * Δi),
-            range(S[1]; length=Ny, step=Yxyz[2] * Δj),
+            range(S[2]; length = Nx, step = Xxyz[1] * Δi),
+            range(S[1]; length = Ny, step = Yxyz[2] * Δj),
             S[3] .+ dcm.GridFrameOffsetVector,
         )
     end
@@ -115,7 +116,7 @@ end
 function fill_doses_slice(out, dose_itp, M, z)
     # note that X and Y axes are swapped for the handled case
     for x in axes(out, 1), y in axes(out, 2)
-        pos = M * @SVector [(y-1), (x-1), 0, 1]
+        pos = M * @SVector [(y - 1), (x - 1), 0, 1]
         out[x, y, z] = dose_itp(pos[2], pos[1], pos[3])
     end
 end
@@ -238,10 +239,10 @@ function extract_roi_masks(dcm_ct, dcm_rs)
             for cs in find_matching_seqs(cur_dcm.SOPInstanceUID, dcm_rs, name)
 
                 cd = reshape(cs.ContourData, 3, :)
-                cd[3,:] .= 1
+                cd[3, :] .= 1
                 cd .-= ct_transl
                 cd = M' * cd
-                cd = cd[[2,1], :] .- [w/2, h/2]
+                cd = cd[[2, 1], :] .- [w / 2, h / 2]
 
                 luxvert = map(c -> Luxor.Point(c...), eachcol(cd))
                 @imagematrix! buffer begin
@@ -260,17 +261,16 @@ end
 
 function make_normals(doses, algo, origin, widths)
     mc = GeometryBasics.Mesh(doses, algo; origin = origin, widths = widths)
-
     if length(mc) == 0
         # there is no mesh anyway in this case
         return mc
     end
 
     itp = Interpolations.scale(
-            extrapolate(interpolate(doses, BSpline(Quadratic(Periodic(OnGrid())))), Flat()),
-            range(origin[1], origin[1] + widths[1], length=size(doses,1)),
-            range(origin[2], origin[2] + widths[2], length=size(doses,2)),
-            range(origin[3], origin[3] + widths[3], length=size(doses,3)))
+        extrapolate(interpolate(doses, BSpline(Quadratic(Periodic(OnGrid())))), Flat()),
+        range(origin[1], origin[1] + widths[1], length = size(doses, 1)),
+        range(origin[2], origin[2] + widths[2], length = size(doses, 2)),
+        range(origin[3], origin[3] + widths[3], length = size(doses, 3)))
     normals = [normalize(Vec3f0(Interpolations.gradient(itp, Tuple(v)...))) for v in mc.position]
 
     new_mesh = GeometryBasics.Mesh(GeometryBasics.meta(mc.position; normals = normals), faces(mc))
@@ -365,8 +365,8 @@ function read_f0(fname)
     end
 
     if all(z_pos_diffs(ct_files) .> 0)
-        doses .= reverse(doses; dims=3)
-        two_sigmas .= reverse(two_sigmas; dims=3)
+        doses .= reverse(doses; dims = 3)
+        two_sigmas .= reverse(two_sigmas; dims = 3)
     end
 
     close(file)
@@ -455,11 +455,11 @@ end
 Calculate FPRs, FNRs, Dice coefficients and Hausdorff distances for each ROI
 for each isodose level from 0 to maximum of planned doses, at `N` levels.
 """
-function calc_plots_data(dd::DoseData; N=1000)
+function calc_plots_data(dd::DoseData; N = 1000)
 
     roi_to_plotdata = Dict{String,NamedTuple}()
     md = max(maximum(dd.doses), maximum(dd.primo_filtered_in_Gy))
-    q = range(0.0, md; length=N)
+    q = range(0.0, md; length = N)
 
     ct_1 = dd.ct_files[1].dcms[1]
     hausdorff_weights = (ct_1.PixelSpacing..., ct_1.SliceThickness)
@@ -475,9 +475,9 @@ function calc_plots_data(dd::DoseData; N=1000)
         for i in 1:length(q)
             level = q[i]
             cm = confusion_matrix_at_level(dd.doses, dd.primo_filtered_in_Gy, mask_inds, level)
-            fprs[i] = cm.fp/(cm.fp+cm.tn)
-            fnrs[i] = cm.fn/(cm.fn+cm.tp)
-            dcs[i] = 2*cm.tp/(2*cm.tp+cm.fp+cm.fn)
+            fprs[i] = cm.fp / (cm.fp + cm.tn)
+            fnrs[i] = cm.fn / (cm.fn + cm.tp)
+            dcs[i] = 2 * cm.tp / (2 * cm.tp + cm.fp + cm.fn)
             if hausdorff_weights isa NTuple{3,Real}
                 hausd[i] = hausdorff_distance(dd.doses, dd.primo_filtered_in_Gy, roi_mask, hausdorff_weights, level)
             end
@@ -490,7 +490,7 @@ function calc_plots_data(dd::DoseData; N=1000)
 
         roi_to_plotdata[roi_name] = (; DVH_TPS = fq_TPS, DVH_Primo = fq_Primo, fpr = fprs, fnr = fnrs, dice = dcs, hausd = hausd)
     end
-    
+
     return (q, roi_to_plotdata)
 end
 
@@ -508,7 +508,7 @@ Otherwise planned dose with a random noise will be used as a substitute.
 
 TODO: support multiple dose files.
 """
-function load_DICOMs(CT_fname, dose_sum_fname, rs_fname, primo_file=nothing)
+function load_DICOMs(CT_fname, dose_sum_fname, rs_fname, primo_file = nothing)
     dcm_data = dcm_parse(dose_sum_fname)
     ct_files = load_dicom(CT_fname)
     doses = transform_doses(dcm_data, ct_files)
@@ -532,7 +532,7 @@ function load_DICOMs(CT_fname, dose_sum_fname, rs_fname, primo_file=nothing)
             ptv_roi_name = argmax(name -> sum(roi_masks[name]), ptv_roi_names)
             mean_dose_over_mask(roi_masks[ptv_roi_name], doses) / mean_dose_over_mask(roi_masks[ptv_roi_name], primo_doses)
         end
-        
+
         primo_in_Gy = primo_doses * factor
         filtering_steps = (ct_dcm.PixelSpacing..., ct_dcm.SliceThickness)
         primo_filtered_in_Gy = imfilter(primo_in_Gy, Kernel.gaussian(0.8 ./ filtering_steps))
@@ -592,7 +592,7 @@ end
 Create meshes for hot and cold regions (to be displayed as red and blue, respectively) for given isodose level
 `hot_cold_level` and ROI `roi_name`.
 """
-function create_hot_cold_meshes(dd::DoseData, hot_cold_level::Float64, roi_name::String)
+function create_hot_cold_meshes(dd::DoseData, hot_cold_level::Float64, roi_name::String, save_cold_mesh::String, save_hot_mesh::String)
     doses = dd.doses
     primo_doses = dd.primo_filtered_in_Gy
     origin, widths = ct_origin_widths(dd.ct_files)
@@ -600,10 +600,11 @@ function create_hot_cold_meshes(dd::DoseData, hot_cold_level::Float64, roi_name:
     hotness = trim_doses(dd, (doses .<= hot_cold_level) .& (primo_doses .>= hot_cold_level); roi_name = roi_name)
     coldness = trim_doses(dd, (doses .>= hot_cold_level) .& (primo_doses .<= hot_cold_level); roi_name = roi_name)
 
-    algo = MarchingCubes(iso=0.5, insidepositive=true)
-    
+    algo = MarchingCubes(iso = 0.5, insidepositive = true)
     mesh_hot = make_normals(hotness, algo, origin, widths)
     mesh_cold = make_normals(coldness, algo, origin, widths)
+    save(save_hot_mesh, mesh_hot)
+    save(save_cold_mesh, mesh_cold)
     return mesh_hot, mesh_cold
 end
 

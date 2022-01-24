@@ -24,3 +24,5 @@ Werkzeug==2.0.1
 wrapt==1.12.1
 python-dotenv
 flask-cors
+dicom-parser
+python-magic-bin==0.4.14
