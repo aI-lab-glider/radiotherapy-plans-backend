@@ -6,6 +6,7 @@ from api import UploadFile, CalculateMeshLogic, UploadedDicoms
 from flask_cors import CORS
 from api.calculate_roi import CalculateROI
 from api.regions_api import RegionsApi
+from api.config import PORT
 
 
 app = Flask(__name__)
@@ -20,4 +21,4 @@ rest_api.add_resource(RegionsApi, f'{HOSTED_API_ROOT}UploadedDicoms/<string:dico
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=PORT)
